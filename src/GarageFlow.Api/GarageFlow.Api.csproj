@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\GarageFlow.Application\GarageFlow.Application.csproj" />
+    <ProjectReference Include="..\GarageFlow.Infrastructure\GarageFlow.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
