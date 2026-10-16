@@ -1,0 +1,16 @@
+using GarageFlow.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace GarageFlow.Infrastructure;
+
+public static class DependencyInjection
+{
+    /// <summary>Registers everything the Infrastructure layer provides. The Api calls this once at startup.</summary>
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString)
+    {
+        services.AddDbContext<GarageFlowDbContext>(options => options.UseSqlServer(connectionString));
+
+        return services;
+    }
+}

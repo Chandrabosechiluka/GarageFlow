@@ -31,4 +31,17 @@ public class Technician : BaseEntity
     public IReadOnlyCollection<Skill> Skills => _skills;
 
     public bool HasSkill(Skill skill) => _skills.Contains(skill);
+
+    // Persistence only: EF Core stores the skills in one column ("1,3,5"). Domain code uses Skills.
+    // Private on purpose; the infrastructure layer maps it by name.
+    private string SkillsStorage
+    {
+        get => string.Join(',', _skills.OrderBy(s => s).Select(s => (int)s));
+        set
+        {
+            _skills.Clear();
+            foreach (var part in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                _skills.Add((Skill)int.Parse(part));
+        }
+    }
 }

@@ -1,5 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <!-- Lets "dotnet user-secrets" keep the real connection string out of Git. -->
+    <UserSecretsId>garageflow-api-6f1c2d84</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.10">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\GarageFlow.Application\GarageFlow.Application.csproj" />
     <ProjectReference Include="..\GarageFlow.Infrastructure\GarageFlow.Infrastructure.csproj" />
