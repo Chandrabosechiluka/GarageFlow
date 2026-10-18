@@ -57,10 +57,7 @@ public class Appointment : BaseEntity
     {
         ArgumentNullException.ThrowIfNull(service);
 
-        if (startUtc.Kind != DateTimeKind.Utc)
-            throw new DomainException("Appointment times must be in UTC.");
-        if (startUtc <= nowUtc)
-            throw new DomainException("Appointment must start in the future.");
+        ValidateStart(startUtc, nowUtc);
 
         return new Appointment
         {
@@ -74,6 +71,18 @@ public class Appointment : BaseEntity
             EndTimeUtc = startUtc.AddMinutes(service.DurationMinutes),
             Status = AppointmentStatus.Booked
         };
+    }
+
+    /// <summary>
+    /// The start-time rules on their own, so callers can check them early (before searching for a free technician)
+    /// and still get exactly the same errors as <see cref="Book"/>.
+    /// </summary>
+    public static void ValidateStart(DateTime startUtc, DateTime nowUtc)
+    {
+        if (startUtc.Kind != DateTimeKind.Utc)
+            throw new DomainException("Appointment times must be in UTC.");
+        if (startUtc <= nowUtc)
+            throw new DomainException("Appointment must start in the future.");
     }
 
     public bool CanTransitionTo(AppointmentStatus next) => AllowedTransitions[Status].Contains(next);

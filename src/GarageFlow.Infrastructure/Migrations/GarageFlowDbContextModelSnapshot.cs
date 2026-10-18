@@ -273,6 +273,13 @@ namespace GarageFlow.Infrastructure.Migrations
                     b.Property<TimeOnly>("OpeningTime")
                         .HasColumnType("time");
 
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasDefaultValue("Asia/Kolkata");
+
                     b.HasKey("Id");
 
                     b.ToTable("Shops", (string)null);

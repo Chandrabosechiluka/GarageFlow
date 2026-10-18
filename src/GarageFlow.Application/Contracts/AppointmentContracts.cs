@@ -4,15 +4,16 @@ using GarageFlow.Domain.Enums;
 namespace GarageFlow.Application.Contracts;
 
 /// <summary>
-/// StartTimeUtc must be sent with a "Z" (for example 2026-11-03T09:00:00Z). Today the caller chooses
-/// the technician and bay; Day 5 adds slot availability so the system can suggest them.
+/// StartTimeUtc must be sent with a "Z" (for example 2026-11-03T09:00:00Z).
+/// Leave TechnicianId and/or BayId empty and the system assigns a free, qualified one for you
+/// (see GET /api/availability for the times that can be booked).
 /// </summary>
 public record BookAppointmentRequest(
     Guid CustomerId,
     Guid VehicleId,
     Guid ServiceTypeId,
-    Guid TechnicianId,
-    Guid BayId,
+    Guid? TechnicianId,
+    Guid? BayId,
     DateTime StartTimeUtc);
 
 public record CancelAppointmentRequest([property: Required, StringLength(500)] string Reason);

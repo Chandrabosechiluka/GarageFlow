@@ -2,7 +2,7 @@
 
 A backend API for auto service centers: customers book a service for their vehicle, the system assigns a qualified technician and a free bay, and each appointment moves through check-in and inspection to completion.
 
-> Status: **Day 4**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, and JWT login with role-based access. Slot availability comes next.
+> Status: **Day 5**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, and slot availability with automatic technician and bay assignment. Double-booking protection comes next.
 
 ## Tech stack
 
@@ -29,6 +29,10 @@ GarageFlow.Api  ──►  GarageFlow.Application  ──►  GarageFlow.Domain
 | `GarageFlow.Domain.Tests` | xUnit tests for domain rules. |
 | `GarageFlow.Infrastructure.Tests` | Tests that check the EF Core mapping without needing a database. |
 | `GarageFlow.Application.Tests` | Tests of the booking and customer use cases against an in-memory database. |
+
+## Time handling
+
+Appointments are stored and exchanged in UTC (send times with a `Z`). Each shop has a time zone (`Asia/Kolkata` by default) and its opening hours are local times in that zone, so the same rule works correctly across daylight saving changes.
 
 ## Appointment lifecycle
 
@@ -109,10 +113,11 @@ Swagger opens at `http://localhost:5080/swagger`. Health checks: `/health` and `
 |---|---|
 | `POST /api/auth/login`, `GET /api/auth/me` | Get a JWT; see what the API read from it |
 | `POST /api/users`, `GET /api/users`, `POST /api/users/{id}/deactivate` | User management (Admin only) |
+| `GET /api/availability?serviceTypeId=&date=` | Free start times for a service on a day (shop's local date), with who and what is free |
 | `GET /api/service-types`, `/api/technicians`, `/api/bays` | Reference data for booking |
 | `POST /api/customers`, `GET /api/customers`, `GET /api/customers/{id}` | Create, search and read customers |
 | `POST /api/customers/{id}/vehicles` | Register a vehicle |
-| `POST /api/appointments` | Book (checks skill, ownership, UTC, clashes) |
+| `POST /api/appointments` | Book (checks skill, ownership, UTC, opening hours, clashes). Leave `technicianId` / `bayId` empty to have them assigned |
 | `GET /api/appointments`, `GET /api/appointments/{id}` | List (filter by `fromUtc`, `toUtc`, `status`) and read |
 | `POST /api/appointments/{id}/check-in`, `start-inspection`, `inspection-items`, `complete`, `cancel`, `no-show` | Move through the lifecycle |
 
@@ -124,7 +129,7 @@ Errors use the standard problem-details JSON: 400 (invalid input or broken rule)
 2. SQL Server in Docker, EF Core mappings, migrations (done)
 3. CRUD endpoints, DTOs, validation, seed data, Swagger (done)
 4. JWT authentication and roles: Admin, Advisor, Technician (done)
-5. Slot availability
+5. Slot availability and automatic assignment (done)
 6. Double-booking prevention (transactions and optimistic concurrency)
 7. Cancellation, rescheduling, waitlist
 8. Background jobs (reminders, no-show marking)

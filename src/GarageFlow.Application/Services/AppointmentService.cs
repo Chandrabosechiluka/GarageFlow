@@ -4,6 +4,7 @@ using GarageFlow.Application.Contracts;
 using GarageFlow.Domain.Common;
 using GarageFlow.Domain.Entities;
 using GarageFlow.Domain.Enums;
+using GarageFlow.Domain.Scheduling;
 using Microsoft.EntityFrameworkCore;
 
 namespace GarageFlow.Application.Services;
@@ -40,38 +41,87 @@ public class AppointmentService(IGarageFlowDbContext db, IClock clock) : IAppoin
         var service = await db.ServiceTypes.AsNoTracking().FirstOrDefaultAsync(s => s.Id == request.ServiceTypeId, ct)
             ?? throw new NotFoundException(nameof(ServiceType), request.ServiceTypeId);
 
-        var technician = await db.Technicians.AsNoTracking().FirstOrDefaultAsync(t => t.Id == request.TechnicianId, ct)
-            ?? throw new NotFoundException(nameof(Technician), request.TechnicianId);
-        if (!technician.HasSkill(service.RequiredSkill))
-            throw new DomainException($"{technician.Name} cannot perform {service.Name} (requires {service.RequiredSkill}).");
+        // A technician or bay is optional. When given it is checked; when empty one is assigned below.
+        Technician? requestedTechnician = null;
+        if (request.TechnicianId is { } requestedTechnicianId)
+        {
+            requestedTechnician = await db.Technicians.AsNoTracking().FirstOrDefaultAsync(t => t.Id == requestedTechnicianId, ct)
+                ?? throw new NotFoundException(nameof(Technician), requestedTechnicianId);
+            if (!requestedTechnician.HasSkill(service.RequiredSkill))
+                throw new DomainException($"{requestedTechnician.Name} cannot perform {service.Name} (requires {service.RequiredSkill}).");
+        }
 
-        var bay = await db.Bays.AsNoTracking().FirstOrDefaultAsync(b => b.Id == request.BayId, ct)
-            ?? throw new NotFoundException(nameof(Bay), request.BayId);
-        if (bay.ShopId != technician.ShopId)
+        Bay? requestedBay = null;
+        if (request.BayId is { } requestedBayId)
+        {
+            requestedBay = await db.Bays.AsNoTracking().FirstOrDefaultAsync(b => b.Id == requestedBayId, ct)
+                ?? throw new NotFoundException(nameof(Bay), requestedBayId);
+        }
+
+        if (requestedTechnician is not null && requestedBay is not null && requestedBay.ShopId != requestedTechnician.ShopId)
             throw new DomainException("The technician and the bay belong to different shops.");
 
-        // The domain checks "UTC" and "in the future", and works out the end time from the service duration.
+        var shop = await ShopLookup.ResolveAsync(db, requestedTechnician?.ShopId ?? requestedBay?.ShopId, ct);
+        var shopId = shop.Id;
+
+        // Same start-time rules as Appointment.Book, checked early so the caller gets the right message first.
+        Appointment.ValidateStart(request.StartTimeUtc, clock.UtcNow);
+
+        var start = request.StartTimeUtc;
+        var end = start.AddMinutes(service.DurationMinutes);
+
+        if (!shop.IsOpenForUtc(start, end))
+            throw new DomainException(
+                $"The shop is closed at that time. Opening hours are {shop.OpeningTime.ToString("HH:mm")}-{shop.ClosingTime.ToString("HH:mm")} ({shop.TimeZoneId}).");
+
+        // Everything active in this shop that overlaps the wanted time: who and what is already taken.
+        var rows = await db.Appointments.AsNoTracking()
+            .Where(a => a.ShopId == shopId
+                        && a.Status != AppointmentStatus.Cancelled
+                        && a.Status != AppointmentStatus.NoShow
+                        && a.StartTimeUtc < end
+                        && start < a.EndTimeUtc)
+            .Select(a => new { a.TechnicianId, a.BayId, a.StartTimeUtc, a.EndTimeUtc })
+            .ToListAsync(ct);
+        var busy = rows.Select(r => new BusyPeriod(r.TechnicianId, r.BayId, r.StartTimeUtc, r.EndTimeUtc)).ToList();
+
+        Guid technicianId;
+        if (requestedTechnician is not null)
+        {
+            if (busy.Any(b => b.TechnicianId == requestedTechnician.Id && b.Overlaps(start, end)))
+                throw new ConflictException("That technician is already booked for that time.");
+            technicianId = requestedTechnician.Id;
+        }
+        else
+        {
+            var shopTechnicians = await db.Technicians.AsNoTracking().Where(t => t.ShopId == shopId).ToListAsync(ct);
+            var freeTechnicians = SlotFinder.FreeTechnicians(
+                shopTechnicians.Where(t => t.HasSkill(service.RequiredSkill)), busy, start, end);
+            if (freeTechnicians.Count == 0)
+                throw new ConflictException("No qualified technician is free at that time.");
+            technicianId = freeTechnicians[0];
+        }
+
+        Guid bayId;
+        if (requestedBay is not null)
+        {
+            if (busy.Any(b => b.BayId == requestedBay.Id && b.Overlaps(start, end)))
+                throw new ConflictException("That bay is already booked for that time.");
+            bayId = requestedBay.Id;
+        }
+        else
+        {
+            var shopBays = await db.Bays.AsNoTracking().Where(b => b.ShopId == shopId).ToListAsync(ct);
+            var freeBays = SlotFinder.FreeBays(shopBays, busy, start, end);
+            if (freeBays.Count == 0)
+                throw new ConflictException("No bay is free at that time.");
+            bayId = freeBays[0];
+        }
+
         var appointment = Appointment.Book(
-            technician.ShopId, request.CustomerId, request.VehicleId, service,
-            request.TechnicianId, request.BayId, request.StartTimeUtc, clock.UtcNow);
+            shopId, request.CustomerId, request.VehicleId, service, technicianId, bayId, start, clock.UtcNow);
 
-        // Same half-open overlap rule as Appointment.OverlapsWith, written as a query so the database does the work.
-        // Cancelled and no-show appointments free the technician and the bay.
-        var start = appointment.StartTimeUtc;
-        var end = appointment.EndTimeUtc;
-        var technicianId = appointment.TechnicianId;
-        var bayId = appointment.BayId;
-
-        var clash = await db.Appointments.AnyAsync(a =>
-            (a.TechnicianId == technicianId || a.BayId == bayId)
-            && a.Status != AppointmentStatus.Cancelled
-            && a.Status != AppointmentStatus.NoShow
-            && a.StartTimeUtc < end
-            && start < a.EndTimeUtc, ct);
-        if (clash)
-            throw new ConflictException("The technician or the bay is already booked for that time.");
-
-        // NOTE: two requests arriving at the same moment can both pass the check above.
+        // NOTE: two requests arriving at the same moment can both pass the checks above.
         // Closing that gap (transaction + row version) is the job of Day 6.
         db.Appointments.Add(appointment);
         await db.SaveChangesAsync(ct);

@@ -144,4 +144,88 @@ public class AppointmentServiceTests
 
         Assert.Equal(AppointmentStatus.Booked, again.Status);
     }
+
+    // ---- Day 5: automatic assignment and opening hours -------------------------------------------------------
+
+    [Fact]
+    public async Task Book_WithoutTechnicianAndBay_AssignsTheFirstFreeOnes()
+    {
+        var s = new Scenario();
+
+        var result = await ServiceFor(s).BookAsync(s.RequestAuto(Scenario.NineAm));
+
+        // Assignment is deterministic: alphabetical, so "Tech One" and "Bay 1" win.
+        Assert.Equal(s.Tech1.Id, result.TechnicianId);
+        Assert.Equal(s.Bay1.Id, result.BayId);
+    }
+
+    [Fact]
+    public async Task Book_AutoAssign_SkipsTheBusyTechnicianAndBay()
+    {
+        var s = new Scenario();
+        var service = ServiceFor(s);
+        await service.BookAsync(s.RequestAuto(Scenario.NineAm));
+
+        var second = await service.BookAsync(s.RequestAuto(Scenario.NineAm));
+
+        Assert.Equal(s.Tech2.Id, second.TechnicianId);
+        Assert.Equal(s.Bay2.Id, second.BayId);
+    }
+
+    [Fact]
+    public async Task Book_AutoAssign_WhenEveryoneIsBusy_IsAConflict()
+    {
+        var s = new Scenario();
+        var service = ServiceFor(s);
+        await service.BookAsync(s.RequestAuto(Scenario.NineAm));
+        await service.BookAsync(s.RequestAuto(Scenario.NineAm));
+
+        await Assert.ThrowsAsync<ConflictException>(() => service.BookAsync(s.RequestAuto(Scenario.NineAm)));
+    }
+
+    [Fact]
+    public async Task Book_AutoAssign_OnlyPicksTechniciansWithTheRequiredSkill()
+    {
+        var s = new Scenario();
+        // Alphabetically first, but cannot do brakes: must never be chosen.
+        var tyreOnly = new Technician(s.Shop.Id, "Aaron Tyres", new[] { Skill.Tires });
+        s.Db.Technicians.Add(tyreOnly);
+        await s.Db.SaveChangesAsync();
+
+        var result = await ServiceFor(s).BookAsync(s.RequestAuto(Scenario.NineAm));
+
+        Assert.NotEqual(tyreOnly.Id, result.TechnicianId);
+    }
+
+    [Fact]
+    public async Task Book_BeforeTheShopOpens_IsRejected()
+    {
+        var s = new Scenario();
+        // 02:00 UTC is 07:30 in India; the shop opens at 09:00 local (03:30 UTC).
+        var tooEarly = new DateTime(2026, 11, 3, 2, 0, 0, DateTimeKind.Utc);
+
+        await Assert.ThrowsAsync<DomainException>(() => ServiceFor(s).BookAsync(s.RequestAuto(tooEarly)));
+    }
+
+    [Fact]
+    public async Task Book_RunningPastClosingTime_IsRejected()
+    {
+        var s = new Scenario();
+        // 12:00 UTC is 17:30 local; a 60-minute service would end at 18:30, after the 18:00 closing.
+        var tooLate = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
+
+        await Assert.ThrowsAsync<DomainException>(() => ServiceFor(s).BookAsync(s.RequestAuto(tooLate)));
+    }
+
+    [Fact]
+    public async Task Book_EndingExactlyAtClosingTime_IsAllowed()
+    {
+        var s = new Scenario();
+        // 11:30 UTC is 17:00 local; 60 minutes later is exactly 18:00.
+        var lastSlot = new DateTime(2026, 11, 3, 11, 30, 0, DateTimeKind.Utc);
+
+        var result = await ServiceFor(s).BookAsync(s.RequestAuto(lastSlot));
+
+        Assert.Equal(lastSlot.AddMinutes(60), result.EndTimeUtc);
+    }
 }

@@ -60,4 +60,8 @@ public class Scenario
 
     public BookAppointmentRequest Request(Technician technician, Bay bay, DateTime startUtc) =>
         new(Customer.Id, Vehicle.Id, BrakeService.Id, technician.Id, bay.Id, startUtc);
+
+    /// <summary>A booking request that leaves technician and bay empty, so the system assigns them.</summary>
+    public BookAppointmentRequest RequestAuto(DateTime startUtc) =>
+        new(Customer.Id, Vehicle.Id, BrakeService.Id, null, null, startUtc);
 }
