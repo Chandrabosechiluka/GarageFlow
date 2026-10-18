@@ -1,9 +1,10 @@
+using GarageFlow.Application.Abstractions;
 using GarageFlow.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace GarageFlow.Infrastructure.Persistence;
 
-public class GarageFlowDbContext : DbContext
+public class GarageFlowDbContext : DbContext, IGarageFlowDbContext
 {
     public GarageFlowDbContext(DbContextOptions<GarageFlowDbContext> options) : base(options)
     {

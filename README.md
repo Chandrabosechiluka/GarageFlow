@@ -2,7 +2,7 @@
 
 A backend API for auto service centers: customers book a service for their vehicle, the system assigns a qualified technician and a free bay, and each appointment moves through check-in and inspection to completion.
 
-> Status: **Day 2**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations. API endpoints, auth and slot availability come next.
+> Status: **Day 3**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, and the first REST endpoints with Swagger. Auth and slot availability come next.
 
 ## Tech stack
 
@@ -23,11 +23,12 @@ GarageFlow.Api  ──►  GarageFlow.Application  ──►  GarageFlow.Domain
 | Project | Responsibility |
 |---|---|
 | `GarageFlow.Domain` | Entities, enums, business rules, the appointment state machine. No framework dependencies. |
-| `GarageFlow.Application` | Use cases, DTOs, validation, interfaces (arrives Day 3+). |
+| `GarageFlow.Application` | Use cases (services), DTOs, validation attributes, and the interfaces Infrastructure implements. |
 | `GarageFlow.Infrastructure` | EF Core DbContext, entity mappings, migrations, later repositories and background jobs. |
 | `GarageFlow.Api` | Controllers and endpoints, middleware, auth, Swagger. |
 | `GarageFlow.Domain.Tests` | xUnit tests for domain rules. |
 | `GarageFlow.Infrastructure.Tests` | Tests that check the EF Core mapping without needing a database. |
+| `GarageFlow.Application.Tests` | Tests of the booking and customer use cases against an in-memory database. |
 
 ## Appointment lifecycle
 
@@ -80,17 +81,30 @@ dotnet test
 dotnet ef migrations add InitialCreate --project src/GarageFlow.Infrastructure --startup-project src/GarageFlow.Api
 dotnet ef database update --project src/GarageFlow.Infrastructure --startup-project src/GarageFlow.Api
 
-# 5. Run the API
+# 5. Run the API (in Development it applies migrations and adds demo data)
 dotnet run --project src/GarageFlow.Api
 ```
 
-Then open `http://localhost:5080/health` and `http://localhost:5080/health/db`.
+Swagger opens at `http://localhost:5080/swagger`. Health checks: `/health` and `/health/db`.
+
+## Endpoints (Day 3)
+
+| Method and path | Purpose |
+|---|---|
+| `GET /api/service-types`, `/api/technicians`, `/api/bays` | Reference data for booking |
+| `POST /api/customers`, `GET /api/customers`, `GET /api/customers/{id}` | Create, search and read customers |
+| `POST /api/customers/{id}/vehicles` | Register a vehicle |
+| `POST /api/appointments` | Book (checks skill, ownership, UTC, clashes) |
+| `GET /api/appointments`, `GET /api/appointments/{id}` | List (filter by `fromUtc`, `toUtc`, `status`) and read |
+| `POST /api/appointments/{id}/check-in`, `start-inspection`, `inspection-items`, `complete`, `cancel`, `no-show` | Move through the lifecycle |
+
+Errors use the standard problem-details JSON: 400 (invalid input or broken rule), 404, 409 (clash or duplicate).
 
 ## Roadmap
 
 1. Domain model and state machine (done)
 2. SQL Server in Docker, EF Core mappings, migrations (done)
-3. CRUD endpoints, DTOs, validation, seed data, Swagger
+3. CRUD endpoints, DTOs, validation, seed data, Swagger (done)
 4. JWT authentication and roles (Admin, Advisor, Technician)
 5. Slot availability
 6. Double-booking prevention (transactions and optimistic concurrency)

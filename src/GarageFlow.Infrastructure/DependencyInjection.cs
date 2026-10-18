@@ -1,3 +1,4 @@
+using GarageFlow.Application.Abstractions;
 using GarageFlow.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,6 +11,10 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString)
     {
         services.AddDbContext<GarageFlowDbContext>(options => options.UseSqlServer(connectionString));
+
+        // Whoever asks for IGarageFlowDbContext gets the SAME per-request GarageFlowDbContext instance.
+        services.AddScoped<IGarageFlowDbContext>(sp => sp.GetRequiredService<GarageFlowDbContext>());
+        services.AddSingleton<IClock, SystemClock>();
 
         return services;
     }
