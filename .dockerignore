@@ -1,0 +1,12 @@
+# Keep the build context small and keep secrets out of the image.
+**/bin/
+**/obj/
+**/.vs/
+.git/
+.github/
+tests/
+docs/
+.env
+*.env
+*.md
+TestResults/

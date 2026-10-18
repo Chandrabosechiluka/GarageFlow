@@ -12,7 +12,7 @@ namespace GarageFlow.Api.Errors;
 /// The one place that turns exceptions into HTTP responses, so controllers never need try/catch.
 /// Every error comes back in the standard "problem details" JSON shape, with the request's correlation ID.
 /// </summary>
-public class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : IExceptionHandler
+public class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger, IHostEnvironment environment) : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
@@ -53,8 +53,9 @@ public class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : IExcepti
         {
             Status = outcome.Status,
             Title = outcome.Title,
-            // Never leak internal details (SQL messages, stack traces) to the caller.
-            Detail = outcome.Detail
+            // Never leak internal details (SQL messages, stack traces) to the caller in production.
+            // In Development (and in the integration tests) the full exception is shown, which saves a trip to the log.
+            Detail = outcome.Detail ?? (environment.IsDevelopment() ? Truncate(exception.ToString(), 4000) : null)
         };
         problem.Extensions["correlationId"] = CorrelationIdMiddleware.Get(httpContext);
 
@@ -62,4 +63,6 @@ public class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : IExcepti
         await httpContext.Response.WriteAsJsonAsync(problem, options: null, contentType: "application/problem+json", cancellationToken);
         return true;
     }
+
+    private static string Truncate(string text, int max) => text.Length <= max ? text : text[..max] + "...";
 }

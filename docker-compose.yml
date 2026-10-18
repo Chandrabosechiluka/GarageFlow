@@ -9,6 +9,34 @@ services:
       - "1433:1433"
     volumes:
       - sqlserver-data:/var/opt/mssql
+    healthcheck:
+      # "Ready" means it answers a query, not just that the process started. The API container waits for this.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q \"SELECT 1\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # The API itself, built from the Dockerfile. It is behind a profile so a plain "docker compose up -d"
+  # still starts only SQL Server (what you use while developing). To run the whole thing in containers:
+  #   docker compose --profile api up --build -d
+  api:
+    profiles: ["api"]
+    build: .
+    container_name: garageflow-api
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      # Development = Swagger, demo data and demo users. For a real deployment use Production (see docs/day-10-study-notes.md).
+      ASPNETCORE_ENVIRONMENT: ${API_ENVIRONMENT:-Development}
+      # "sqlserver" is the other container's name on the compose network; it is not localhost.
+      ConnectionStrings__GarageFlow: "Server=sqlserver,1433;Database=GarageFlow;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:-}
+      Database__MigrateOnStartup: "true"
+    ports:
+      - "5080:8080"
+    # No healthcheck here on purpose: the ASP.NET runtime image contains no curl/wget. Check /health from outside instead.
 
 volumes:
   sqlserver-data:

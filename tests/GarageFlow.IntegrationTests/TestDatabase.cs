@@ -43,7 +43,10 @@ public sealed class RequiresSqlServerFactAttribute : FactAttribute
 {
     public RequiresSqlServerFactAttribute()
     {
-        if (!TestDatabase.IsAvailable)
+        // In CI the database is always supposed to be there: GARAGEFLOW_REQUIRE_SQL=true turns "skip" into "fail loudly",
+        // so a broken CI setup can never hide behind a green build of skipped tests.
+        var required = string.Equals(Environment.GetEnvironmentVariable("GARAGEFLOW_REQUIRE_SQL"), "true", StringComparison.OrdinalIgnoreCase);
+        if (!TestDatabase.IsAvailable && !required)
             Skip = "SQL Server is not reachable. Start it with 'docker compose up -d' (the connection string comes from the API's user secrets, or GARAGEFLOW_TEST_SQL).";
     }
 }

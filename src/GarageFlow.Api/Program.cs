@@ -142,13 +142,21 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+}
 
-    // Development convenience: create/upgrade the database and add demo data on startup.
+// Development always creates/upgrades the database. A container or server can ask for the same with
+// Database__MigrateOnStartup=true (no demo data, no demo users: those exist only in Development).
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+{
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<GarageFlowDbContext>();
     await db.Database.MigrateAsync();
-    await DbSeeder.SeedAsync(db);
-    await DbSeeder.SeedUsersAsync(db, scope.ServiceProvider.GetRequiredService<IPasswordHasher>());
+
+    if (app.Environment.IsDevelopment())
+    {
+        await DbSeeder.SeedAsync(db);
+        await DbSeeder.SeedUsersAsync(db, scope.ServiceProvider.GetRequiredService<IPasswordHasher>());
+    }
 }
 
 // Order matters: first find out WHO the caller is (authentication), then decide what they MAY do (authorization).
@@ -166,3 +174,8 @@ app.MapGet("/health/db", async (GarageFlowDbContext db, CancellationToken cancel
     .AllowAnonymous();
 
 app.Run();
+
+// Lets the integration tests start the whole API in memory (WebApplicationFactory<Program>).
+public partial class Program
+{
+}

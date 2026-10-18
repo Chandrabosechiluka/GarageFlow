@@ -4,8 +4,8 @@ using GarageFlow.Domain.Enums;
 namespace GarageFlow.Application.Contracts;
 
 public record LoginRequest(
-    [property: Required, EmailAddress] string Email,
-    [property: Required] string Password);
+    [Required, EmailAddress] string Email,
+    [Required] string Password);
 
 public record LoginResponse(string AccessToken, DateTime ExpiresAtUtc, UserRole Role, string DisplayName)
 {
@@ -14,9 +14,9 @@ public record LoginResponse(string AccessToken, DateTime ExpiresAtUtc, UserRole 
 }
 
 public record CreateUserRequest(
-    [property: Required, EmailAddress, StringLength(256)] string Email,
-    [property: Required, StringLength(200)] string DisplayName,
-    [property: Required, StringLength(100, MinimumLength = 8)] string Password,
-    [property: EnumDataType(typeof(UserRole))] UserRole Role);
+    [Required, EmailAddress, StringLength(256)] string Email,
+    [Required, StringLength(200)] string DisplayName,
+    [Required, StringLength(100, MinimumLength = 8)] string Password,
+    [EnumDataType(typeof(UserRole))] UserRole Role);
 
 public record UserResponse(Guid Id, string Email, string DisplayName, UserRole Role, bool IsActive);

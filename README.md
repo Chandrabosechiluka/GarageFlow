@@ -2,7 +2,7 @@
 
 A backend API for auto service centers: customers book a service for their vehicle, the system assigns a qualified technician and a free bay, and each appointment moves through check-in and inspection to completion.
 
-> Status: **Day 9**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Day 7 adds a cancellation notice policy, rescheduling under the same lock, and a waitlist that is offered freed slots. Day 8 adds background jobs: no-show marking, reminders, and waitlist offer notices and expiry. Day 9 adds pagination, an automatic audit trail, correlation IDs, request logging and consistent error bodies.
+> Status: **Day 10**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Day 7 adds a cancellation notice policy, rescheduling under the same lock, and a waitlist that is offered freed slots. Day 8 adds background jobs: no-show marking, reminders, and waitlist offer notices and expiry. Day 9 adds pagination, an automatic audit trail, correlation IDs, request logging and consistent error bodies. Day 10 adds end-to-end API tests, a Docker image and GitHub Actions CI.
 
 ## Tech stack
 
@@ -119,12 +119,22 @@ dotnet run --project src/GarageFlow.Api
 
 Swagger opens at `http://localhost:5080/swagger`. Health checks: `/health` and `/health/db`.
 
+## Docker and CI
+
+```powershell
+# Add JWT_SIGNING_KEY=<40+ random characters> to .env first, then run SQL Server AND the API in containers:
+docker compose --profile api up --build -d
+# Swagger: http://localhost:5080/swagger   (stop with: docker compose --profile api down)
+```
+`docker compose up -d` (no profile) still starts only SQL Server, for local development. The `Dockerfile` is multi-stage and runs as a non-root user; secrets come in as environment variables, never baked into the image. GitHub Actions (`.github/workflows/ci.yml`) builds, runs every test against a real SQL Server container, and builds the image on each push. See `docs/day-10-study-notes.md`.
+
 ## Running the tests
 
 ```powershell
 dotnet test                                                       # everything; integration tests are skipped if SQL Server is not running
 dotnet test --filter "FullyQualifiedName!~IntegrationTests"       # fast unit tests only
 dotnet test --filter DoubleBookingTests                           # only the parallel booking tests (need docker compose up -d)
+dotnet test --filter ApiEndpointTests                             # end-to-end HTTP tests of the whole API (need docker compose up -d)
 ```
 
 The integration tests use the API's connection string from user secrets (or the `GARAGEFLOW_TEST_SQL` environment variable) and create and delete their own temporary databases.
@@ -177,5 +187,5 @@ Errors use the standard problem-details JSON: 400 (invalid input or broken rule)
 7. Cancellation, rescheduling, waitlist (done)
 8. Background jobs: reminders, no-show marking, offer expiry (done)
 9. Error handling, logging, pagination, audit trail (done)
-10. Integration tests, Docker image for the API, GitHub Actions
+10. API integration tests, Docker image for the API, GitHub Actions (done)
 11. Deployment to Azure
