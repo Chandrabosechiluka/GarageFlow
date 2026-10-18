@@ -45,5 +45,18 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.HasIndex(a => new { a.TechnicianId, a.StartTimeUtc });
         builder.HasIndex(a => new { a.BayId, a.StartTimeUtc });
         builder.HasIndex(a => new { a.ShopId, a.StartTimeUtc });
+
+        // Last line of defence against double booking. The booking code already checks for clashes under a lock, but if a
+        // bug or a second code path ever slips through, the DATABASE refuses two active appointments for the same technician
+        // (or bay) starting at the same moment. Cancelled and no-show appointments are excluded so the slot can be reused.
+        // (SQL Server cannot express "no overlapping ranges" as a constraint, so exact same start is what it can guarantee.)
+        builder.HasIndex(a => new { a.TechnicianId, a.StartTimeUtc })
+            .IsUnique()
+            .HasDatabaseName("UX_Appointments_ActiveTechnicianStart")
+            .HasFilter("[Status] <> 'Cancelled' AND [Status] <> 'NoShow'");
+        builder.HasIndex(a => new { a.BayId, a.StartTimeUtc })
+            .IsUnique()
+            .HasDatabaseName("UX_Appointments_ActiveBayStart")
+            .HasFilter("[Status] <> 'Cancelled' AND [Status] <> 'NoShow'");
     }
 }

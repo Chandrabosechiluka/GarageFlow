@@ -110,11 +110,17 @@ namespace GarageFlow.Infrastructure.Migrations
 
                     b.HasIndex("VehicleId");
 
-                    b.HasIndex("BayId", "StartTimeUtc");
+                    b.HasIndex("BayId", "StartTimeUtc")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Appointments_ActiveBayStart")
+                        .HasFilter("[Status] <> 'Cancelled' AND [Status] <> 'NoShow'");
 
                     b.HasIndex("ShopId", "StartTimeUtc");
 
-                    b.HasIndex("TechnicianId", "StartTimeUtc");
+                    b.HasIndex("TechnicianId", "StartTimeUtc")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Appointments_ActiveTechnicianStart")
+                        .HasFilter("[Status] <> 'Cancelled' AND [Status] <> 'NoShow'");
 
                     b.ToTable("Appointments", (string)null);
                 });

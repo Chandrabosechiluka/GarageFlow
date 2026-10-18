@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GarageFlow.Infrastructure.T
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GarageFlow.Application.Tests", "tests\GarageFlow.Application.Tests\GarageFlow.Application.Tests.csproj", "{61745F04-1CD6-4C6C-A628-0015F5C07B79}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GarageFlow.IntegrationTests", "tests\GarageFlow.IntegrationTests\GarageFlow.IntegrationTests.csproj", "{49CFE521-59BA-4A40-B670-721ADFC5DAC6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -58,6 +60,10 @@ Global
 		{61745F04-1CD6-4C6C-A628-0015F5C07B79}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{61745F04-1CD6-4C6C-A628-0015F5C07B79}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{61745F04-1CD6-4C6C-A628-0015F5C07B79}.Release|Any CPU.Build.0 = Release|Any CPU
+		{49CFE521-59BA-4A40-B670-721ADFC5DAC6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{49CFE521-59BA-4A40-B670-721ADFC5DAC6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{49CFE521-59BA-4A40-B670-721ADFC5DAC6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{49CFE521-59BA-4A40-B670-721ADFC5DAC6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{23D2C65B-B407-4AAE-A620-D8E7231C64E6} = {A86C091C-2209-4B8C-AED4-8E6A77E924AA}
@@ -67,5 +73,6 @@ Global
 		{42D40D91-52EC-4786-B61E-8B8DBE530ED2} = {C75E1BA2-30E5-48FF-AFE4-875287CDA0D7}
 		{D7E00B63-4229-4ADC-853A-FD0507F40EE0} = {C75E1BA2-30E5-48FF-AFE4-875287CDA0D7}
 		{61745F04-1CD6-4C6C-A628-0015F5C07B79} = {C75E1BA2-30E5-48FF-AFE4-875287CDA0D7}
+		{49CFE521-59BA-4A40-B670-721ADFC5DAC6} = {C75E1BA2-30E5-48FF-AFE4-875287CDA0D7}
 	EndGlobalSection
 EndGlobal

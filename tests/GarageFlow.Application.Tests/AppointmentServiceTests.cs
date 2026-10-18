@@ -9,7 +9,7 @@ namespace GarageFlow.Application.Tests;
 
 public class AppointmentServiceTests
 {
-    private static AppointmentService ServiceFor(Scenario s) => new(s.Db, s.Clock);
+    private static AppointmentService ServiceFor(Scenario s) => s.Appointments();
 
     [Fact]
     public async Task Book_ValidRequest_CreatesBookedAppointmentEndingAfterServiceDuration()
@@ -227,5 +227,28 @@ public class AppointmentServiceTests
         var result = await ServiceFor(s).BookAsync(s.RequestAuto(lastSlot));
 
         Assert.Equal(lastSlot.AddMinutes(60), result.EndTimeUtc);
+    }
+
+    // ---- Day 6: the booking gate -----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Book_RunsTheCheckAndTheInsertInsideTheBookingGate_ForThatShop()
+    {
+        var s = new Scenario();
+
+        await ServiceFor(s).BookAsync(s.RequestAuto(Scenario.NineAm));
+
+        Assert.Equal(new[] { $"booking:{s.Shop.Id}" }, s.Gate.Keys);
+    }
+
+    [Fact]
+    public async Task Book_RejectedByEarlyValidation_NeverTakesTheLock()
+    {
+        var s = new Scenario();
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            ServiceFor(s).BookAsync(s.RequestAuto(Scenario.Now.AddHours(-1))));
+
+        Assert.Empty(s.Gate.Keys); // cheap checks happen before the lock, so bad requests never make anyone wait
     }
 }

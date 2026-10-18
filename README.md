@@ -2,7 +2,7 @@
 
 A backend API for auto service centers: customers book a service for their vehicle, the system assigns a qualified technician and a free bay, and each appointment moves through check-in and inspection to completion.
 
-> Status: **Day 5**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, and slot availability with automatic technician and bay assignment. Double-booking protection comes next.
+> Status: **Day 6**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Cancellation, rescheduling and waitlist come next.
 
 ## Tech stack
 
@@ -33,6 +33,10 @@ GarageFlow.Api  ──►  GarageFlow.Application  ──►  GarageFlow.Domain
 ## Time handling
 
 Appointments are stored and exchanged in UTC (send times with a `Z`). Each shop has a time zone (`Asia/Kolkata` by default) and its opening hours are local times in that zone, so the same rule works correctly across daylight saving changes.
+
+## Concurrency
+
+Two requests booking the same technician at the same moment must never both succeed. Booking runs inside a database transaction that holds a SQL Server application lock per shop (`IBookingGate`), so "check it is free" and "take it" are one step. Two filtered unique indexes are a second line of defence inside the database, and `Appointment.RowVersion` detects two people editing the same appointment (HTTP 409). Parallel integration tests against the real SQL Server prove it.
 
 ## Appointment lifecycle
 
@@ -93,6 +97,16 @@ dotnet run --project src/GarageFlow.Api
 
 Swagger opens at `http://localhost:5080/swagger`. Health checks: `/health` and `/health/db`.
 
+## Running the tests
+
+```powershell
+dotnet test                                                       # everything; integration tests are skipped if SQL Server is not running
+dotnet test --filter "FullyQualifiedName!~IntegrationTests"       # fast unit tests only
+dotnet test --filter DoubleBookingTests                           # only the parallel booking tests (need docker compose up -d)
+```
+
+The integration tests use the API's connection string from user secrets (or the `GARAGEFLOW_TEST_SQL` environment variable) and create and delete their own temporary databases.
+
 ## Demo logins (Development only)
 
 `admin@garageflow.local`, `advisor@garageflow.local`, `tech@garageflow.local`, all with password `Garage@12345`. They are created only when the environment is Development and must never exist anywhere else.
@@ -130,7 +144,7 @@ Errors use the standard problem-details JSON: 400 (invalid input or broken rule)
 3. CRUD endpoints, DTOs, validation, seed data, Swagger (done)
 4. JWT authentication and roles: Admin, Advisor, Technician (done)
 5. Slot availability and automatic assignment (done)
-6. Double-booking prevention (transactions and optimistic concurrency)
+6. Double-booking prevention: transactions, lock, unique indexes, optimistic concurrency (done)
 7. Cancellation, rescheduling, waitlist
 8. Background jobs (reminders, no-show marking)
 9. Error handling, logging, pagination, audit trail

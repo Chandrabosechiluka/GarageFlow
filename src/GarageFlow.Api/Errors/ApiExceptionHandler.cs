@@ -2,6 +2,7 @@ using GarageFlow.Application.Common;
 using GarageFlow.Domain.Common;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GarageFlow.Api.Errors;
@@ -14,28 +15,36 @@ public class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : IExcepti
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
-        var (status, title) = exception switch
+        (int Status, string Title, string? Detail) outcome = exception switch
         {
-            AuthenticationFailedException => (StatusCodes.Status401Unauthorized, "Authentication failed"),
-            NotFoundException => (StatusCodes.Status404NotFound, "Resource not found"),
-            ConflictException => (StatusCodes.Status409Conflict, "Conflict"),
-            DomainException => (StatusCodes.Status400BadRequest, "Business rule violated"),
-            DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "The record was changed by someone else. Reload and try again."),
-            _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred")
+            AuthenticationFailedException => (StatusCodes.Status401Unauthorized, "Authentication failed", exception.Message),
+            NotFoundException => (StatusCodes.Status404NotFound, "Resource not found", exception.Message),
+            ConflictException => (StatusCodes.Status409Conflict, "Conflict", exception.Message),
+            DomainException => (StatusCodes.Status400BadRequest, "Business rule violated", exception.Message),
+
+            // Optimistic concurrency: the row version changed between loading and saving (someone else edited it first).
+            DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "Conflict",
+                "This record was changed by someone else. Reload it and try again."),
+
+            // The database's own unique index refused the write (2601 / 2627): somebody saved the same thing a moment ago.
+            DbUpdateException { InnerException: SqlException { Number: 2601 or 2627 } } => (StatusCodes.Status409Conflict, "Conflict",
+                "That conflicts with data that was just saved by someone else. Please try again."),
+
+            _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred", null)
         };
 
-        if (status == StatusCodes.Status500InternalServerError)
+        if (outcome.Status == StatusCodes.Status500InternalServerError)
             logger.LogError(exception, "Unhandled exception");
 
         var problem = new ProblemDetails
         {
-            Status = status,
-            Title = title,
-            // Never leak internal details for unexpected errors.
-            Detail = status == StatusCodes.Status500InternalServerError ? null : exception.Message
+            Status = outcome.Status,
+            Title = outcome.Title,
+            // Never leak internal details (SQL messages, stack traces) to the caller.
+            Detail = outcome.Detail
         };
 
-        httpContext.Response.StatusCode = status;
+        httpContext.Response.StatusCode = outcome.Status;
         await httpContext.Response.WriteAsJsonAsync(problem, options: null, contentType: "application/problem+json", cancellationToken);
         return true;
     }

@@ -33,7 +33,7 @@ public class AvailabilityServiceTests
     public async Task ABookedSlot_NoLongerOffersTheBusyTechnicianAndBay()
     {
         var s = new Scenario();
-        await new AppointmentService(s.Db, s.Clock).BookAsync(s.Request(s.Tech1, s.Bay1, Scenario.NineAm));
+        await s.Appointments().BookAsync(s.Request(s.Tech1, s.Bay1, Scenario.NineAm));
 
         var result = await ServiceFor(s).GetAsync(s.BrakeService.Id, Day, null, null);
 

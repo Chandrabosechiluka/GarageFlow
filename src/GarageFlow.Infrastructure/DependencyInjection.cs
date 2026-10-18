@@ -16,6 +16,7 @@ public static class DependencyInjection
         // Whoever asks for IGarageFlowDbContext gets the SAME per-request GarageFlowDbContext instance.
         services.AddScoped<IGarageFlowDbContext>(sp => sp.GetRequiredService<GarageFlowDbContext>());
         services.AddSingleton<IClock, SystemClock>();
+        services.AddScoped<IBookingGate, SqlServerBookingGate>();
 
         // Authentication helpers. JwtOptions is bound from configuration by the Api (Configure<JwtOptions>).
         services.AddSingleton<IPasswordHasher>(new Pbkdf2PasswordHasher());

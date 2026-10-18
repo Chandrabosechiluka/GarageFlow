@@ -1,5 +1,6 @@
 using GarageFlow.Application.Abstractions;
 using GarageFlow.Application.Contracts;
+using GarageFlow.Application.Services;
 using GarageFlow.Domain.Entities;
 using GarageFlow.Domain.Enums;
 using GarageFlow.Infrastructure.Persistence;
@@ -14,6 +15,21 @@ public sealed class FixedClock(DateTime utcNow) : IClock
 }
 
 /// <summary>
+/// Stands in for the SQL Server lock in unit tests (the in-memory database has no transactions).
+/// It just runs the action, and remembers which keys were locked so tests can check the booking used it.
+/// </summary>
+public sealed class PassThroughBookingGate : IBookingGate
+{
+    public List<string> Keys { get; } = new();
+
+    public async Task<T> RunExclusiveAsync<T>(string key, Func<CancellationToken, Task<T>> action, CancellationToken ct = default)
+    {
+        Keys.Add(key);
+        return await action(ct);
+    }
+}
+
+/// <summary>
 /// A small, ready-made garage: one shop, one 60-minute brake service, two technicians who can do it,
 /// two bays and one customer with one vehicle. Each test gets its own fresh in-memory database.
 /// </summary>
@@ -24,6 +40,10 @@ public class Scenario
 
     public GarageFlowDbContext Db { get; }
     public FixedClock Clock { get; } = new(Now);
+    public PassThroughBookingGate Gate { get; } = new();
+
+    /// <summary>The service under test, wired to this scenario's database, clock and (fake) booking gate.</summary>
+    public AppointmentService Appointments() => new(Db, Clock, Gate);
 
     public Shop Shop { get; }
     public ServiceType BrakeService { get; }

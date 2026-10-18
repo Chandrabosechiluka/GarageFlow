@@ -26,7 +26,7 @@ public interface IAppointmentService
 /// Orchestrates a use case: load the data, ask the domain objects to enforce the rules, save.
 /// The business rules themselves (state machine, UTC, cancellation reason) stay in the Domain project.
 /// </summary>
-public class AppointmentService(IGarageFlowDbContext db, IClock clock) : IAppointmentService
+public class AppointmentService(IGarageFlowDbContext db, IClock clock, IBookingGate gate) : IAppointmentService
 {
     public async Task<AppointmentResponse> BookAsync(BookAppointmentRequest request, CancellationToken ct = default)
     {
@@ -74,59 +74,63 @@ public class AppointmentService(IGarageFlowDbContext db, IClock clock) : IAppoin
             throw new DomainException(
                 $"The shop is closed at that time. Opening hours are {shop.OpeningTime.ToString("HH:mm")}-{shop.ClosingTime.ToString("HH:mm")} ({shop.TimeZoneId}).");
 
-        // Everything active in this shop that overlaps the wanted time: who and what is already taken.
-        var rows = await db.Appointments.AsNoTracking()
-            .Where(a => a.ShopId == shopId
-                        && a.Status != AppointmentStatus.Cancelled
-                        && a.Status != AppointmentStatus.NoShow
-                        && a.StartTimeUtc < end
-                        && start < a.EndTimeUtc)
-            .Select(a => new { a.TechnicianId, a.BayId, a.StartTimeUtc, a.EndTimeUtc })
-            .ToListAsync(ct);
-        var busy = rows.Select(r => new BusyPeriod(r.TechnicianId, r.BayId, r.StartTimeUtc, r.EndTimeUtc)).ToList();
-
-        Guid technicianId;
-        if (requestedTechnician is not null)
+        // CRITICAL SECTION. "Is it free?" and "take it" must be one indivisible step, otherwise two requests arriving
+        // together both see "free" and both book it. The gate lets one booking per shop run at a time and wraps the
+        // reads and the insert in one transaction. The cheap validation above stays outside so it never holds the lock.
+        return await gate.RunExclusiveAsync($"booking:{shopId}", async token =>
         {
-            if (busy.Any(b => b.TechnicianId == requestedTechnician.Id && b.Overlaps(start, end)))
-                throw new ConflictException("That technician is already booked for that time.");
-            technicianId = requestedTechnician.Id;
-        }
-        else
-        {
-            var shopTechnicians = await db.Technicians.AsNoTracking().Where(t => t.ShopId == shopId).ToListAsync(ct);
-            var freeTechnicians = SlotFinder.FreeTechnicians(
-                shopTechnicians.Where(t => t.HasSkill(service.RequiredSkill)), busy, start, end);
-            if (freeTechnicians.Count == 0)
-                throw new ConflictException("No qualified technician is free at that time.");
-            technicianId = freeTechnicians[0];
-        }
+            // Everything active in this shop that overlaps the wanted time: who and what is already taken.
+            var rows = await db.Appointments.AsNoTracking()
+                .Where(a => a.ShopId == shopId
+                            && a.Status != AppointmentStatus.Cancelled
+                            && a.Status != AppointmentStatus.NoShow
+                            && a.StartTimeUtc < end
+                            && start < a.EndTimeUtc)
+                .Select(a => new { a.TechnicianId, a.BayId, a.StartTimeUtc, a.EndTimeUtc })
+                .ToListAsync(token);
+            var busy = rows.Select(r => new BusyPeriod(r.TechnicianId, r.BayId, r.StartTimeUtc, r.EndTimeUtc)).ToList();
 
-        Guid bayId;
-        if (requestedBay is not null)
-        {
-            if (busy.Any(b => b.BayId == requestedBay.Id && b.Overlaps(start, end)))
-                throw new ConflictException("That bay is already booked for that time.");
-            bayId = requestedBay.Id;
-        }
-        else
-        {
-            var shopBays = await db.Bays.AsNoTracking().Where(b => b.ShopId == shopId).ToListAsync(ct);
-            var freeBays = SlotFinder.FreeBays(shopBays, busy, start, end);
-            if (freeBays.Count == 0)
-                throw new ConflictException("No bay is free at that time.");
-            bayId = freeBays[0];
-        }
+            Guid technicianId;
+            if (requestedTechnician is not null)
+            {
+                if (busy.Any(b => b.TechnicianId == requestedTechnician.Id && b.Overlaps(start, end)))
+                    throw new ConflictException("That technician is already booked for that time.");
+                technicianId = requestedTechnician.Id;
+            }
+            else
+            {
+                var shopTechnicians = await db.Technicians.AsNoTracking().Where(t => t.ShopId == shopId).ToListAsync(token);
+                var freeTechnicians = SlotFinder.FreeTechnicians(
+                    shopTechnicians.Where(t => t.HasSkill(service.RequiredSkill)), busy, start, end);
+                if (freeTechnicians.Count == 0)
+                    throw new ConflictException("No qualified technician is free at that time.");
+                technicianId = freeTechnicians[0];
+            }
 
-        var appointment = Appointment.Book(
-            shopId, request.CustomerId, request.VehicleId, service, technicianId, bayId, start, clock.UtcNow);
+            Guid bayId;
+            if (requestedBay is not null)
+            {
+                if (busy.Any(b => b.BayId == requestedBay.Id && b.Overlaps(start, end)))
+                    throw new ConflictException("That bay is already booked for that time.");
+                bayId = requestedBay.Id;
+            }
+            else
+            {
+                var shopBays = await db.Bays.AsNoTracking().Where(b => b.ShopId == shopId).ToListAsync(token);
+                var freeBays = SlotFinder.FreeBays(shopBays, busy, start, end);
+                if (freeBays.Count == 0)
+                    throw new ConflictException("No bay is free at that time.");
+                bayId = freeBays[0];
+            }
 
-        // NOTE: two requests arriving at the same moment can both pass the checks above.
-        // Closing that gap (transaction + row version) is the job of Day 6.
-        db.Appointments.Add(appointment);
-        await db.SaveChangesAsync(ct);
+            var appointment = Appointment.Book(
+                shopId, request.CustomerId, request.VehicleId, service, technicianId, bayId, start, clock.UtcNow);
 
-        return appointment.ToResponse();
+            db.Appointments.Add(appointment);
+            await db.SaveChangesAsync(token);
+
+            return appointment.ToResponse();
+        }, ct);
     }
 
     public async Task<AppointmentResponse> GetAsync(Guid id, CancellationToken ct = default)
