@@ -19,6 +19,7 @@ public interface IAppointmentService
     Task<AppointmentResponse> AddInspectionItemAsync(Guid id, AddInspectionItemRequest request, CancellationToken ct = default);
     Task<AppointmentResponse> CompleteAsync(Guid id, CancellationToken ct = default);
     Task<AppointmentResponse> CancelAsync(Guid id, CancelAppointmentRequest request, CancellationToken ct = default);
+    Task<AppointmentResponse> RescheduleAsync(Guid id, RescheduleAppointmentRequest request, CancellationToken ct = default);
     Task<AppointmentResponse> MarkNoShowAsync(Guid id, CancellationToken ct = default);
 }
 
@@ -181,8 +182,167 @@ public class AppointmentService(IGarageFlowDbContext db, IClock clock, IBookingG
     public Task<AppointmentResponse> CompleteAsync(Guid id, CancellationToken ct = default) =>
         ChangeAsync(id, a => a.Complete(), ct);
 
-    public Task<AppointmentResponse> CancelAsync(Guid id, CancelAppointmentRequest request, CancellationToken ct = default) =>
-        ChangeAsync(id, a => a.Cancel(request.Reason), ct);
+    public async Task<AppointmentResponse> CancelAsync(Guid id, CancelAppointmentRequest request, CancellationToken ct = default)
+    {
+        var appointment = await LoadAsync(id, ct);
+
+        // Remember the freed slot before the change, then cancel (the domain applies the reason and notice rules).
+        var freed = (appointment.ShopId, appointment.TechnicianId, appointment.StartTimeUtc, appointment.EndTimeUtc);
+        appointment.Cancel(request.Reason, clock.UtcNow, request.AllowLate);
+        await db.SaveChangesAsync(ct);
+
+        await OfferFreedSlotAsync(freed.ShopId, freed.TechnicianId, freed.StartTimeUtc, freed.EndTimeUtc, ct);
+        return appointment.ToResponse();
+    }
+
+    public async Task<AppointmentResponse> RescheduleAsync(Guid id, RescheduleAppointmentRequest request, CancellationToken ct = default)
+    {
+        var appointment = await LoadAsync(id, ct);
+        if (appointment.Status != AppointmentStatus.Booked)
+            throw new DomainException($"Only a Booked appointment can be rescheduled (this one is {appointment.Status}).");
+
+        var service = await db.ServiceTypes.AsNoTracking().FirstOrDefaultAsync(s => s.Id == appointment.ServiceTypeId, ct)
+            ?? throw new NotFoundException(nameof(ServiceType), appointment.ServiceTypeId);
+        var shop = await ShopLookup.ResolveAsync(db, appointment.ShopId, ct);
+        var shopId = shop.Id;
+
+        Technician? requestedTechnician = null;
+        if (request.TechnicianId is { } technicianId)
+        {
+            requestedTechnician = await db.Technicians.AsNoTracking().FirstOrDefaultAsync(t => t.Id == technicianId, ct)
+                ?? throw new NotFoundException(nameof(Technician), technicianId);
+            if (requestedTechnician.ShopId != shopId)
+                throw new DomainException("That technician belongs to a different shop.");
+            if (!requestedTechnician.HasSkill(service.RequiredSkill))
+                throw new DomainException($"{requestedTechnician.Name} cannot perform {service.Name} (requires {service.RequiredSkill}).");
+        }
+
+        Bay? requestedBay = null;
+        if (request.BayId is { } bayId)
+        {
+            requestedBay = await db.Bays.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bayId, ct)
+                ?? throw new NotFoundException(nameof(Bay), bayId);
+            if (requestedBay.ShopId != shopId)
+                throw new DomainException("That bay belongs to a different shop.");
+        }
+
+        var start = request.NewStartTimeUtc;
+        var end = start.AddMinutes(service.DurationMinutes);
+        Appointment.ValidateStart(start, clock.UtcNow);
+        if (!shop.IsOpenForUtc(start, end))
+            throw new DomainException(
+                $"The shop is closed at that time. Opening hours are {shop.OpeningTime.ToString("HH:mm")}-{shop.ClosingTime.ToString("HH:mm")} ({shop.TimeZoneId}).");
+
+        var old = (Technician: appointment.TechnicianId, Start: appointment.StartTimeUtc, End: appointment.EndTimeUtc);
+
+        // Same lock as booking: a move is also "check it is free, then take it", so it must not interleave with a booking.
+        await gate.RunExclusiveAsync($"booking:{shopId}", async token =>
+        {
+            // Everything active that overlaps the new time, except this appointment itself (it is leaving its old slot).
+            var rows = await db.Appointments.AsNoTracking()
+                .Where(a => a.Id != id
+                            && a.ShopId == shopId
+                            && a.Status != AppointmentStatus.Cancelled
+                            && a.Status != AppointmentStatus.NoShow
+                            && a.StartTimeUtc < end
+                            && start < a.EndTimeUtc)
+                .Select(a => new { a.TechnicianId, a.BayId, a.StartTimeUtc, a.EndTimeUtc })
+                .ToListAsync(token);
+            var busy = rows.Select(r => new BusyPeriod(r.TechnicianId, r.BayId, r.StartTimeUtc, r.EndTimeUtc)).ToList();
+
+            Guid newTechnicianId;
+            if (requestedTechnician is not null)
+            {
+                if (busy.Any(b => b.TechnicianId == requestedTechnician.Id && b.Overlaps(start, end)))
+                    throw new ConflictException("That technician is already booked for that time.");
+                newTechnicianId = requestedTechnician.Id;
+            }
+            else if (!busy.Any(b => b.TechnicianId == appointment.TechnicianId && b.Overlaps(start, end)))
+            {
+                newTechnicianId = appointment.TechnicianId; // keep the same person when they are free
+            }
+            else
+            {
+                var shopTechnicians = await db.Technicians.AsNoTracking().Where(t => t.ShopId == shopId).ToListAsync(token);
+                var free = SlotFinder.FreeTechnicians(shopTechnicians.Where(t => t.HasSkill(service.RequiredSkill)), busy, start, end);
+                if (free.Count == 0)
+                    throw new ConflictException("No qualified technician is free at that time.");
+                newTechnicianId = free[0];
+            }
+
+            Guid newBayId;
+            if (requestedBay is not null)
+            {
+                if (busy.Any(b => b.BayId == requestedBay.Id && b.Overlaps(start, end)))
+                    throw new ConflictException("That bay is already booked for that time.");
+                newBayId = requestedBay.Id;
+            }
+            else if (!busy.Any(b => b.BayId == appointment.BayId && b.Overlaps(start, end)))
+            {
+                newBayId = appointment.BayId;
+            }
+            else
+            {
+                var shopBays = await db.Bays.AsNoTracking().Where(b => b.ShopId == shopId).ToListAsync(token);
+                var free = SlotFinder.FreeBays(shopBays, busy, start, end);
+                if (free.Count == 0)
+                    throw new ConflictException("No bay is free at that time.");
+                newBayId = free[0];
+            }
+
+            appointment.Reschedule(start, service.DurationMinutes, newTechnicianId, newBayId, clock.UtcNow, request.AllowLate);
+            await db.SaveChangesAsync(token); // RowVersion: fails with 409 if someone else changed this appointment meanwhile
+            return true;
+        }, ct);
+
+        // The old slot is free now: offer it to the waitlist.
+        await OfferFreedSlotAsync(shopId, old.Technician, old.Start, old.End, ct);
+        return appointment.ToResponse();
+    }
+
+    /// <summary>
+    /// A slot just opened up. Offer it to the oldest waiting customer whose window contains the start, whose service fits
+    /// inside the freed time, and whose service the freed technician can do (the freed bay is free for the same reason).
+    /// This is a courtesy step after the real change succeeded, so it never fails the cancel or reschedule.
+    /// </summary>
+    private async Task OfferFreedSlotAsync(Guid shopId, Guid technicianId, DateTime start, DateTime end, CancellationToken ct)
+    {
+        if (start <= clock.UtcNow)
+            return;
+
+        var technician = await db.Technicians.AsNoTracking().FirstOrDefaultAsync(t => t.Id == technicianId, ct);
+        if (technician is null)
+            return;
+
+        var freedMinutes = (end - start).TotalMinutes;
+        var services = await db.ServiceTypes.AsNoTracking().ToDictionaryAsync(s => s.Id, ct);
+
+        var candidates = await db.WaitlistEntries
+            .Where(w => w.ShopId == shopId
+                        && w.Status == WaitlistStatus.Waiting
+                        && w.EarliestStartUtc <= start
+                        && start <= w.LatestStartUtc)
+            .OrderBy(w => w.CreatedUtc)
+            .Take(50)
+            .ToListAsync(ct);
+
+        var match = candidates.FirstOrDefault(w =>
+            services.TryGetValue(w.ServiceTypeId, out var service)
+            && service.DurationMinutes <= freedMinutes
+            && technician.HasSkill(service.RequiredSkill));
+        if (match is null)
+            return;
+
+        try
+        {
+            match.Offer(start);
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Another request touched the same entry first. It is fine: the cancel already succeeded.
+        }
+    }
 
     public Task<AppointmentResponse> MarkNoShowAsync(Guid id, CancellationToken ct = default) =>
         ChangeAsync(id, a => a.MarkNoShow(), ct);

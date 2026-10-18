@@ -15,6 +15,7 @@ public static class DependencyInjection
         services.AddScoped<IAvailabilityService, AvailabilityService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IWaitlistService, WaitlistService>();
 
         return services;
     }

@@ -2,7 +2,7 @@
 
 A backend API for auto service centers: customers book a service for their vehicle, the system assigns a qualified technician and a free bay, and each appointment moves through check-in and inspection to completion.
 
-> Status: **Day 6**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Cancellation, rescheduling and waitlist come next.
+> Status: **Day 7**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Day 7 adds a cancellation notice policy, rescheduling under the same lock, and a waitlist that is offered freed slots.
 
 ## Tech stack
 
@@ -38,6 +38,10 @@ Appointments are stored and exchanged in UTC (send times with a `Z`). Each shop 
 
 Two requests booking the same technician at the same moment must never both succeed. Booking runs inside a database transaction that holds a SQL Server application lock per shop (`IBookingGate`), so "check it is free" and "take it" are one step. Two filtered unique indexes are a second line of defence inside the database, and `Appointment.RowVersion` detects two people editing the same appointment (HTTP 409). Parallel integration tests against the real SQL Server prove it.
 
+## Waitlist
+
+When a booking is cancelled or moved, the oldest waiting customer whose window contains the freed start (and whose service fits and can be done by the freed technician) is **offered** the slot. Accepting books a real appointment through the normal booking path and lock; if the slot was taken meanwhile the customer returns to the queue. See `docs/day-7-study-notes.md`.
+
 ## Appointment lifecycle
 
 ```mermaid
@@ -56,7 +60,7 @@ stateDiagram-v2
 
 Rules enforced in the domain:
 - Status can only change through methods (`CheckIn`, `StartInspection`, `Complete`, `Cancel`, `MarkNoShow`); illegal moves throw `DomainException`.
-- Cancelling requires a reason.
+- Cancelling requires a reason. A Booked appointment cannot be cancelled or rescheduled less than 2 hours before it starts, unless an Admin overrides (`allowLate`).
 - Inspection items can only be added during inspection, and an appointment cannot be completed without at least one.
 - Times are UTC, and overlap checks use half-open intervals (an appointment ending at 10:00 does not clash with one starting at 10:00).
 
@@ -117,7 +121,8 @@ The integration tests use the API's connection string from user secrets (or the 
 |---|:-:|:-:|:-:|
 | Log in, read customers, appointments and catalog | yes | yes | yes |
 | Create customers and vehicles | yes | yes | no |
-| Book, check in, cancel, mark no-show | yes | yes | no |
+| Book, reschedule, check in, cancel, mark no-show, use the waitlist | yes | yes | no |
+| Override the 2-hour notice rule (`allowLate`) | yes | no | no |
 | Start inspection, add inspection items, complete | yes | no | yes |
 | Manage users | yes | no | no |
 
@@ -133,6 +138,9 @@ The integration tests use the API's connection string from user secrets (or the 
 | `POST /api/customers/{id}/vehicles` | Register a vehicle |
 | `POST /api/appointments` | Book (checks skill, ownership, UTC, opening hours, clashes). Leave `technicianId` / `bayId` empty to have them assigned |
 | `GET /api/appointments`, `GET /api/appointments/{id}` | List (filter by `fromUtc`, `toUtc`, `status`) and read |
+| `POST /api/appointments/{id}/reschedule` | Move a Booked appointment (same rules and lock as booking; keeps technician and bay if free) |
+| `POST /api/waitlist`, `GET /api/waitlist?status=` | Ask to be told when a slot opens; see the queue |
+| `POST /api/waitlist/{id}/accept`, `/cancel` | Turn an offered slot into a booking; leave the queue |
 | `POST /api/appointments/{id}/check-in`, `start-inspection`, `inspection-items`, `complete`, `cancel`, `no-show` | Move through the lifecycle |
 
 Errors use the standard problem-details JSON: 400 (invalid input or broken rule), 401 (no or bad token, failed login), 403 (wrong role), 404, 409 (clash or duplicate).
@@ -145,7 +153,7 @@ Errors use the standard problem-details JSON: 400 (invalid input or broken rule)
 4. JWT authentication and roles: Admin, Advisor, Technician (done)
 5. Slot availability and automatic assignment (done)
 6. Double-booking prevention: transactions, lock, unique indexes, optimistic concurrency (done)
-7. Cancellation, rescheduling, waitlist
+7. Cancellation, rescheduling, waitlist (done)
 8. Background jobs (reminders, no-show marking)
 9. Error handling, logging, pagination, audit trail
 10. Integration tests, Docker image for the API, GitHub Actions

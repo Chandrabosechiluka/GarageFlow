@@ -16,7 +16,16 @@ public record BookAppointmentRequest(
     Guid? BayId,
     DateTime StartTimeUtc);
 
-public record CancelAppointmentRequest([property: Required, StringLength(500)] string Reason);
+/// <summary>
+/// AllowLate lifts the "at least 2 hours notice" rule. Only an Admin may set it (the API checks the role).
+/// </summary>
+public record CancelAppointmentRequest([property: Required, StringLength(500)] string Reason, bool AllowLate = false);
+
+/// <summary>
+/// Move a Booked appointment. Leave TechnicianId / BayId empty to keep the current ones if they are free,
+/// otherwise a free qualified one is assigned. AllowLate is Admin only.
+/// </summary>
+public record RescheduleAppointmentRequest(DateTime NewStartTimeUtc, Guid? TechnicianId, Guid? BayId, bool AllowLate = false);
 
 public record AddInspectionItemRequest(
     [property: Required, StringLength(200)] string Name,

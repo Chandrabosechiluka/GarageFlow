@@ -19,6 +19,7 @@ public interface IGarageFlowDbContext
     DbSet<InspectionItem> InspectionItems { get; }
     DbSet<AuditLog> AuditLogs { get; }
     DbSet<AppUser> Users { get; }
+    DbSet<WaitlistEntry> WaitlistEntries { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

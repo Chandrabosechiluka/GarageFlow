@@ -45,6 +45,13 @@ public class Scenario
     /// <summary>The service under test, wired to this scenario's database, clock and (fake) booking gate.</summary>
     public AppointmentService Appointments() => new(Db, Clock, Gate);
 
+    /// <summary>The waitlist service, wired to the same database and clock, booking through a real AppointmentService.</summary>
+    public WaitlistService Waitlist() => new(Db, Clock, Appointments());
+
+    /// <summary>A waitlist request for the brake service with a window of acceptable start times.</summary>
+    public JoinWaitlistRequest JoinRequest(DateTime earliestUtc, DateTime latestUtc) =>
+        new(Customer.Id, Vehicle.Id, BrakeService.Id, earliestUtc, latestUtc);
+
     public Shop Shop { get; }
     public ServiceType BrakeService { get; }
     public Technician Tech1 { get; }

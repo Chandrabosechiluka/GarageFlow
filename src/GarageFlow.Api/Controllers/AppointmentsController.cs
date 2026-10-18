@@ -56,8 +56,24 @@ public class AppointmentsController(IAppointmentService appointments) : Controll
 
     [HttpPost("{id:guid}/cancel")]
     [Authorize(Roles = Roles.AdminOrAdvisor)]
-    public async Task<ActionResult<AppointmentResponse>> Cancel(Guid id, CancelAppointmentRequest request, CancellationToken ct) =>
-        Ok(await appointments.CancelAsync(id, request, ct));
+    public async Task<ActionResult<AppointmentResponse>> Cancel(Guid id, CancelAppointmentRequest request, CancellationToken ct)
+    {
+        // The "2 hours notice" rule can only be lifted by an Admin.
+        if (request.AllowLate && !User.IsInRole(Roles.Admin))
+            return Forbid();
+
+        return Ok(await appointments.CancelAsync(id, request, ct));
+    }
+
+    [HttpPost("{id:guid}/reschedule")]
+    [Authorize(Roles = Roles.AdminOrAdvisor)]
+    public async Task<ActionResult<AppointmentResponse>> Reschedule(Guid id, RescheduleAppointmentRequest request, CancellationToken ct)
+    {
+        if (request.AllowLate && !User.IsInRole(Roles.Admin))
+            return Forbid();
+
+        return Ok(await appointments.RescheduleAsync(id, request, ct));
+    }
 
     [HttpPost("{id:guid}/no-show")]
     [Authorize(Roles = Roles.AdminOrAdvisor)]

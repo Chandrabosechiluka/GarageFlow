@@ -351,6 +351,64 @@ namespace GarageFlow.Infrastructure.Migrations
                     b.ToTable("Vehicles", (string)null);
                 });
 
+            modelBuilder.Entity("GarageFlow.Domain.Entities.WaitlistEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AppointmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("EarliestStartUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("LatestStartUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("OfferedStartUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("ServiceTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ShopId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppointmentId");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("ServiceTypeId");
+
+                    b.HasIndex("VehicleId", "ServiceTypeId");
+
+                    b.HasIndex("ShopId", "Status", "CreatedUtc");
+
+                    b.ToTable("WaitlistEntries", (string)null);
+                });
+
             modelBuilder.Entity("GarageFlow.Domain.Entities.Appointment", b =>
                 {
                     b.HasOne("GarageFlow.Domain.Entities.Bay", null)
@@ -423,6 +481,38 @@ namespace GarageFlow.Infrastructure.Migrations
                         .WithMany("Vehicles")
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GarageFlow.Domain.Entities.WaitlistEntry", b =>
+                {
+                    b.HasOne("GarageFlow.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GarageFlow.Domain.Entities.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GarageFlow.Domain.Entities.ServiceType", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GarageFlow.Domain.Entities.Shop", null)
+                        .WithMany()
+                        .HasForeignKey("ShopId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GarageFlow.Domain.Entities.Vehicle", null)
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

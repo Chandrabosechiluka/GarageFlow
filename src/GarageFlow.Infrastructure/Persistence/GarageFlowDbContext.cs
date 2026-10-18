@@ -20,6 +20,7 @@ public class GarageFlowDbContext : DbContext, IGarageFlowDbContext
     public DbSet<InspectionItem> InspectionItems => Set<InspectionItem>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<WaitlistEntry> WaitlistEntries => Set<WaitlistEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

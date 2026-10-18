@@ -20,6 +20,9 @@ public class Appointment : BaseEntity
         [AppointmentStatus.NoShow] = Array.Empty<AppointmentStatus>()
     };
 
+    /// <summary>A Booked appointment cannot be cancelled or moved when it starts in less than this (an Admin can override).</summary>
+    public static readonly TimeSpan MinimumChangeNotice = TimeSpan.FromHours(2);
+
     private readonly List<InspectionItem> _inspectionItems = new();
 
     private Appointment()
@@ -108,6 +111,39 @@ public class Appointment : BaseEntity
         CancellationReason = reason.Trim();
     }
 
+    /// <summary>
+    /// Cancel with the notice policy: a Booked appointment starting in under two hours can only be cancelled
+    /// with <paramref name="allowLate"/> (an Admin decision). The older overload above has no policy.
+    /// </summary>
+    public void Cancel(string? reason, DateTime nowUtc, bool allowLate = false)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new DomainException("A cancellation reason is required.");
+        EnsureEnoughNotice(nowUtc, allowLate, "cancelled");
+
+        Cancel(reason);
+    }
+
+    /// <summary>
+    /// Moves a Booked appointment to a new time (and possibly a new technician and bay).
+    /// The caller has already checked that the new slot is free; this method guards the appointment's own rules.
+    /// </summary>
+    public void Reschedule(DateTime newStartUtc, int durationMinutes, Guid technicianId, Guid bayId, DateTime nowUtc, bool allowLate = false)
+    {
+        if (Status != AppointmentStatus.Booked)
+            throw new DomainException($"Only a Booked appointment can be rescheduled (this one is {Status}).");
+        if (durationMinutes <= 0)
+            throw new DomainException("Service duration must be positive.");
+
+        EnsureEnoughNotice(nowUtc, allowLate, "rescheduled");
+        ValidateStart(newStartUtc, nowUtc);
+
+        TechnicianId = technicianId;
+        BayId = bayId;
+        StartTimeUtc = newStartUtc;
+        EndTimeUtc = newStartUtc.AddMinutes(durationMinutes);
+    }
+
     public void MarkNoShow() => TransitionTo(AppointmentStatus.NoShow);
 
     public InspectionItem AddInspectionItem(string name, InspectionCondition condition, string? notes)
@@ -126,6 +162,13 @@ public class Appointment : BaseEntity
     /// </summary>
     public bool OverlapsWith(DateTime startUtc, DateTime endUtc) =>
         StartTimeUtc < endUtc && startUtc < EndTimeUtc;
+
+    private void EnsureEnoughNotice(DateTime nowUtc, bool allowLate, string verb)
+    {
+        if (!allowLate && Status == AppointmentStatus.Booked && StartTimeUtc - nowUtc < MinimumChangeNotice)
+            throw new DomainException(
+                $"A booking cannot be {verb} less than {MinimumChangeNotice.TotalHours:0} hours before it starts. Ask an admin to override.");
+    }
 
     private void TransitionTo(AppointmentStatus next)
     {

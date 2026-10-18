@@ -30,4 +30,8 @@ internal static class Mappings
             a.Id, a.ShopId, a.CustomerId, a.VehicleId, a.ServiceTypeId, a.TechnicianId, a.BayId,
             a.StartTimeUtc, a.EndTimeUtc, a.Status, a.CancellationReason,
             a.InspectionItems.Select(i => i.ToResponse()).ToList());
+
+    public static WaitlistEntryResponse ToResponse(this WaitlistEntry w) =>
+        new(w.Id, w.ShopId, w.CustomerId, w.VehicleId, w.ServiceTypeId, w.EarliestStartUtc, w.LatestStartUtc,
+            w.Status, w.OfferedStartUtc, w.AppointmentId, w.CreatedUtc);
 }
