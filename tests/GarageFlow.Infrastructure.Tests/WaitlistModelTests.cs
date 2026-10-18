@@ -31,4 +31,18 @@ public class WaitlistModelTests
         Assert.NotEmpty(entity.GetForeignKeys());
         Assert.All(entity.GetForeignKeys(), fk => Assert.Equal(DeleteBehavior.Restrict, fk.DeleteBehavior));
     }
+
+    [Fact]
+    public void BackgroundJobColumns_ArePresent_AndOptional()
+    {
+        using var context = NewContext();
+
+        var reminder = context.Model.FindEntityType(typeof(Appointment))!.FindProperty(nameof(Appointment.ReminderSentUtc))!;
+        Assert.True(reminder.IsNullable);
+
+        var waitlist = context.Model.FindEntityType(typeof(WaitlistEntry))!;
+        Assert.True(waitlist.FindProperty(nameof(WaitlistEntry.OfferExpiresUtc))!.IsNullable);
+        Assert.True(waitlist.FindProperty(nameof(WaitlistEntry.OfferNotifiedUtc))!.IsNullable);
+        Assert.True(waitlist.FindProperty(nameof(WaitlistEntry.OfferedTechnicianId))!.IsNullable);
+    }
 }

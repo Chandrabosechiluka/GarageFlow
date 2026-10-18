@@ -1,5 +1,6 @@
 using GarageFlow.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GarageFlow.Application;
 
@@ -16,6 +17,10 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IWaitlistService, WaitlistService>();
+
+        // Background jobs. TryAdd = the Api may register its own configured settings first; this is only the fallback.
+        services.TryAddSingleton(new MaintenanceSettings());
+        services.AddScoped<IMaintenanceService, MaintenanceService>();
 
         return services;
     }

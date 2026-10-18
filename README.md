@@ -2,7 +2,7 @@
 
 A backend API for auto service centers: customers book a service for their vehicle, the system assigns a qualified technician and a free bay, and each appointment moves through check-in and inspection to completion.
 
-> Status: **Day 7**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Day 7 adds a cancellation notice policy, rescheduling under the same lock, and a waitlist that is offered freed slots.
+> Status: **Day 8**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Day 7 adds a cancellation notice policy, rescheduling under the same lock, and a waitlist that is offered freed slots. Day 8 adds background jobs: no-show marking, reminders, and waitlist offer notices and expiry.
 
 ## Tech stack
 
@@ -41,6 +41,16 @@ Two requests booking the same technician at the same moment must never both succ
 ## Waitlist
 
 When a booking is cancelled or moved, the oldest waiting customer whose window contains the freed start (and whose service fits and can be done by the freed technician) is **offered** the slot. Accepting books a real appointment through the normal booking path and lock; if the slot was taken meanwhile the customer returns to the queue. See `docs/day-7-study-notes.md`.
+
+## Background jobs
+
+A hosted worker (`MaintenanceWorker`) runs every minute and calls `MaintenanceService`:
+
+- **No-shows:** a Booked appointment not checked in 30 minutes after its start becomes `NoShow`.
+- **Reminders:** appointments within 24 hours get one notification (sent first, recorded after, so a failure retries).
+- **Waitlist:** offers are announced once, expire after 2 hours, and an expired offer is passed to the next customer if the slot is still free.
+
+Jobs are idempotent (each records its result on the row) and tolerate races through the row version. Notifications go through `INotificationSender`; today it logs. Settings live under `Maintenance` in `appsettings.json`. See `docs/day-8-study-notes.md`.
 
 ## Appointment lifecycle
 
@@ -141,6 +151,7 @@ The integration tests use the API's connection string from user secrets (or the 
 | `POST /api/appointments/{id}/reschedule` | Move a Booked appointment (same rules and lock as booking; keeps technician and bay if free) |
 | `POST /api/waitlist`, `GET /api/waitlist?status=` | Ask to be told when a slot opens; see the queue |
 | `POST /api/waitlist/{id}/accept`, `/cancel` | Turn an offered slot into a booking; leave the queue |
+| `POST /api/maintenance/run` | Admin only: run the background jobs now and see how many items each handled |
 | `POST /api/appointments/{id}/check-in`, `start-inspection`, `inspection-items`, `complete`, `cancel`, `no-show` | Move through the lifecycle |
 
 Errors use the standard problem-details JSON: 400 (invalid input or broken rule), 401 (no or bad token, failed login), 403 (wrong role), 404, 409 (clash or duplicate).
@@ -154,7 +165,7 @@ Errors use the standard problem-details JSON: 400 (invalid input or broken rule)
 5. Slot availability and automatic assignment (done)
 6. Double-booking prevention: transactions, lock, unique indexes, optimistic concurrency (done)
 7. Cancellation, rescheduling, waitlist (done)
-8. Background jobs (reminders, no-show marking)
+8. Background jobs: reminders, no-show marking, offer expiry (done)
 9. Error handling, logging, pagination, audit trail
 10. Integration tests, Docker image for the API, GitHub Actions
 11. Deployment to Azure

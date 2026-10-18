@@ -1,8 +1,10 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using GarageFlow.Api.BackgroundJobs;
 using GarageFlow.Api.Errors;
 using GarageFlow.Application;
 using GarageFlow.Application.Abstractions;
+using GarageFlow.Application.Services;
 using GarageFlow.Infrastructure;
 using GarageFlow.Infrastructure.Auth;
 using GarageFlow.Infrastructure.Persistence;
@@ -28,6 +30,9 @@ if (string.IsNullOrWhiteSpace(jwt.SigningKey) || jwt.SigningKey == "SET_IN_USER_
 }
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+// Background job settings (grace period, reminder lead time...). Registered before AddApplication so these values win.
+var maintenance = builder.Configuration.GetSection("Maintenance").Get<MaintenanceSettings>() ?? new MaintenanceSettings();
+builder.Services.AddSingleton(maintenance);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(connectionString);
 
@@ -63,6 +68,10 @@ builder.Services
     .AddControllers()
     // Enums travel as readable text ("Booked") instead of numbers (1).
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
+// Runs the maintenance jobs (no-shows, reminders, offer expiry) on a timer for as long as the API is up.
+if (maintenance.Enabled)
+    builder.Services.AddHostedService<MaintenanceWorker>();
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();

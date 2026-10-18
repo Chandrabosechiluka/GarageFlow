@@ -18,6 +18,9 @@ public class WaitlistEntryConfiguration : IEntityTypeConfiguration<WaitlistEntry
         builder.Property(w => w.LatestStartUtc).IsRequired().HasConversion(new UtcDateTimeConverter());
         builder.Property(w => w.CreatedUtc).IsRequired().HasConversion(new UtcDateTimeConverter());
         builder.Property(w => w.OfferedStartUtc).HasConversion(new UtcDateTimeConverter());
+        builder.Property(w => w.OfferedEndUtc).HasConversion(new UtcDateTimeConverter());
+        builder.Property(w => w.OfferExpiresUtc).HasConversion(new UtcDateTimeConverter());
+        builder.Property(w => w.OfferNotifiedUtc).HasConversion(new UtcDateTimeConverter());
 
         builder.Property(w => w.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
 
@@ -34,5 +37,8 @@ public class WaitlistEntryConfiguration : IEntityTypeConfiguration<WaitlistEntry
         // "Oldest waiting entries for this shop" is the query run whenever a slot opens up.
         builder.HasIndex(w => new { w.ShopId, w.Status, w.CreatedUtc });
         builder.HasIndex(w => new { w.VehicleId, w.ServiceTypeId });
+
+        // The expiry and notification jobs scan open offers.
+        builder.HasIndex(w => new { w.Status, w.OfferExpiresUtc });
     }
 }

@@ -15,5 +15,8 @@ public enum WaitlistStatus
     Fulfilled = 4,
 
     /// <summary>The customer left the waitlist.</summary>
-    Cancelled = 5
+    Cancelled = 5,
+
+    /// <summary>The offer was not answered in time (the customer can join the waitlist again).</summary>
+    Expired = 6
 }

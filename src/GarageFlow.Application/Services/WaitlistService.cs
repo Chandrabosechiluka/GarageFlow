@@ -78,7 +78,7 @@ public class WaitlistService(IGarageFlowDbContext db, IClock clock, IAppointment
 
         // Step 1: claim the offer and save at once. Two people pressing "accept" together both read "Offered",
         // but the row version lets only ONE save succeed; the other gets a 409 before anything is booked.
-        var start = entry.BeginAccept();
+        var start = entry.BeginAccept(clock.UtcNow);
         await db.SaveChangesAsync(ct);
 
         try

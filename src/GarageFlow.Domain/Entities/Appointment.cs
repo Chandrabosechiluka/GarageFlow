@@ -43,6 +43,9 @@ public class Appointment : BaseEntity
     public AppointmentStatus Status { get; private set; }
     public string? CancellationReason { get; private set; }
 
+    /// <summary>When the reminder job told the customer about this appointment (null = not yet). Used so it happens once.</summary>
+    public DateTime? ReminderSentUtc { get; private set; }
+
     /// <summary>Used later for optimistic concurrency (EF Core row version).</summary>
     public byte[] RowVersion { get; private set; } = Array.Empty<byte>();
 
@@ -142,6 +145,19 @@ public class Appointment : BaseEntity
         BayId = bayId;
         StartTimeUtc = newStartUtc;
         EndTimeUtc = newStartUtc.AddMinutes(durationMinutes);
+        ReminderSentUtc = null; // a new time deserves a fresh reminder
+    }
+
+    /// <summary>True when the customer is late enough to count as a no-show: still Booked and the grace period has passed.</summary>
+    public bool IsNoShowDue(DateTime nowUtc, TimeSpan grace) =>
+        Status == AppointmentStatus.Booked && StartTimeUtc + grace <= nowUtc;
+
+    public void MarkReminderSent(DateTime nowUtc)
+    {
+        if (Status != AppointmentStatus.Booked)
+            throw new DomainException($"Only a Booked appointment gets a reminder (this one is {Status}).");
+
+        ReminderSentUtc = nowUtc;
     }
 
     public void MarkNoShow() => TransitionTo(AppointmentStatus.NoShow);

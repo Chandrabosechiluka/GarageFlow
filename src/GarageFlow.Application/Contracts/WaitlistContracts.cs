@@ -24,5 +24,6 @@ public record WaitlistEntryResponse(
     DateTime LatestStartUtc,
     WaitlistStatus Status,
     DateTime? OfferedStartUtc,
+    DateTime? OfferExpiresUtc,
     Guid? AppointmentId,
     DateTime CreatedUtc);

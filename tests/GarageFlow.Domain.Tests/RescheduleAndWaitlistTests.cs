@@ -149,9 +149,9 @@ public class WaitlistEntryTests
     {
         var entry = NewEntry();
 
-        Assert.Throws<DomainException>(() => entry.Offer(Now.AddDays(5)));
+        Assert.Throws<DomainException>(() => entry.Offer(Now.AddDays(5), Now.AddDays(5).AddHours(1), Guid.NewGuid(), Now));
 
-        entry.Offer(Now.AddDays(2));
+        entry.Offer(Now.AddDays(2), Now.AddDays(2).AddHours(1), Guid.NewGuid(), Now);
         Assert.Equal(WaitlistStatus.Offered, entry.Status);
         Assert.Equal(Now.AddDays(2), entry.OfferedStartUtc);
     }
@@ -160,9 +160,9 @@ public class WaitlistEntryTests
     public void Offer_IsOnlyPossibleWhileWaiting()
     {
         var entry = NewEntry();
-        entry.Offer(Now.AddDays(2));
+        entry.Offer(Now.AddDays(2), Now.AddDays(2).AddHours(1), Guid.NewGuid(), Now);
 
-        Assert.Throws<DomainException>(() => entry.Offer(Now.AddDays(2)));
+        Assert.Throws<DomainException>(() => entry.Offer(Now.AddDays(2), Now.AddDays(2).AddHours(1), Guid.NewGuid(), Now));
     }
 
     [Fact]
@@ -170,9 +170,9 @@ public class WaitlistEntryTests
     {
         var entry = NewEntry();
         var slot = Now.AddDays(2);
-        entry.Offer(slot);
+        entry.Offer(slot, slot.AddHours(1), Guid.NewGuid(), Now);
 
-        Assert.Equal(slot, entry.BeginAccept());
+        Assert.Equal(slot, entry.BeginAccept(Now));
         Assert.Equal(WaitlistStatus.Accepting, entry.Status);
 
         var appointmentId = Guid.NewGuid();
@@ -184,15 +184,15 @@ public class WaitlistEntryTests
     [Fact]
     public void BeginAccept_WithoutAnOffer_Throws()
     {
-        Assert.Throws<DomainException>(() => NewEntry().BeginAccept());
+        Assert.Throws<DomainException>(() => NewEntry().BeginAccept(Now));
     }
 
     [Fact]
     public void WithdrawOffer_ReturnsToWaiting()
     {
         var entry = NewEntry();
-        entry.Offer(Now.AddDays(2));
-        entry.BeginAccept();
+        entry.Offer(Now.AddDays(2), Now.AddDays(2).AddHours(1), Guid.NewGuid(), Now);
+        entry.BeginAccept(Now);
 
         entry.WithdrawOffer();
 
@@ -208,9 +208,102 @@ public class WaitlistEntryTests
         Assert.Equal(WaitlistStatus.Cancelled, waiting.Status);
 
         var done = NewEntry();
-        done.Offer(Now.AddDays(2));
-        done.BeginAccept();
+        done.Offer(Now.AddDays(2), Now.AddDays(2).AddHours(1), Guid.NewGuid(), Now);
+        done.BeginAccept(Now);
         done.Fulfil(Guid.NewGuid());
         Assert.Throws<DomainException>(() => done.Cancel());
+    }
+
+    [Fact]
+    public void Offer_ExpiresAfterTheOfferLifetime()
+    {
+        var entry = NewEntry();
+        var technician = Guid.NewGuid();
+        entry.Offer(Now.AddDays(2), Now.AddDays(2).AddHours(1), technician, Now);
+
+        Assert.Equal(Now + WaitlistEntry.OfferLifetime, entry.OfferExpiresUtc);
+        Assert.Equal(technician, entry.OfferedTechnicianId);
+        Assert.False(entry.IsOfferExpired(Now.AddMinutes(119)));
+        Assert.True(entry.IsOfferExpired(Now + WaitlistEntry.OfferLifetime));
+    }
+
+    [Fact]
+    public void Expire_OnlyWorksOnceTheTimeIsUp()
+    {
+        var entry = NewEntry();
+        entry.Offer(Now.AddDays(2), Now.AddDays(2).AddHours(1), Guid.NewGuid(), Now);
+
+        Assert.Throws<DomainException>(() => entry.Expire(Now.AddMinutes(30)));
+
+        entry.Expire(Now.AddHours(3));
+        Assert.Equal(WaitlistStatus.Expired, entry.Status);
+        Assert.NotNull(entry.OfferedStartUtc); // kept as history
+        Assert.Throws<DomainException>(() => entry.Cancel());
+    }
+
+    [Fact]
+    public void BeginAccept_AfterTheOfferExpired_Throws()
+    {
+        var entry = NewEntry();
+        entry.Offer(Now.AddDays(2), Now.AddDays(2).AddHours(1), Guid.NewGuid(), Now);
+
+        var error = Assert.Throws<DomainException>(() => entry.BeginAccept(Now.AddHours(3)));
+
+        Assert.Contains("expired", error.Message);
+        Assert.Equal(WaitlistStatus.Offered, entry.Status);
+    }
+
+    [Fact]
+    public void MarkOfferNotified_NeedsAnOpenOffer()
+    {
+        var entry = NewEntry();
+        Assert.Throws<DomainException>(() => entry.MarkOfferNotified(Now));
+
+        entry.Offer(Now.AddDays(2), Now.AddDays(2).AddHours(1), Guid.NewGuid(), Now);
+        entry.MarkOfferNotified(Now.AddMinutes(1));
+        Assert.Equal(Now.AddMinutes(1), entry.OfferNotifiedUtc);
+    }
+}
+
+public class AppointmentJobRuleTests
+{
+    private static readonly DateTime Now = new(2026, 11, 2, 9, 0, 0, DateTimeKind.Utc);
+    private static readonly ServiceType OilChange = new("Oil change", 45, Skill.OilChange);
+
+    private static Appointment BookedAt(DateTime start) =>
+        Appointment.Book(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), OilChange, Guid.NewGuid(), Guid.NewGuid(), start, Now);
+
+    [Fact]
+    public void IsNoShowDue_OnlyAfterTheGracePeriod_AndOnlyWhileBooked()
+    {
+        var grace = TimeSpan.FromMinutes(30);
+        var appointment = BookedAt(Now.AddHours(1));
+
+        Assert.False(appointment.IsNoShowDue(Now.AddHours(1).AddMinutes(29), grace));
+        Assert.True(appointment.IsNoShowDue(Now.AddHours(1).AddMinutes(30), grace));
+
+        appointment.CheckIn();
+        Assert.False(appointment.IsNoShowDue(Now.AddDays(1), grace));
+    }
+
+    [Fact]
+    public void MarkReminderSent_RecordsTheTime_AndRescheduleResetsIt()
+    {
+        var appointment = BookedAt(Now.AddDays(1));
+
+        appointment.MarkReminderSent(Now);
+        Assert.Equal(Now, appointment.ReminderSentUtc);
+
+        appointment.Reschedule(Now.AddDays(2), 45, Guid.NewGuid(), Guid.NewGuid(), Now);
+        Assert.Null(appointment.ReminderSentUtc);
+    }
+
+    [Fact]
+    public void MarkReminderSent_RefusesNonBookedAppointments()
+    {
+        var appointment = BookedAt(Now.AddDays(1));
+        appointment.CheckIn();
+
+        Assert.Throws<DomainException>(() => appointment.MarkReminderSent(Now));
     }
 }

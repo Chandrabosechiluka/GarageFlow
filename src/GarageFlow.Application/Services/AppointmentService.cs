@@ -300,49 +300,9 @@ public class AppointmentService(IGarageFlowDbContext db, IClock clock, IBookingG
         return appointment.ToResponse();
     }
 
-    /// <summary>
-    /// A slot just opened up. Offer it to the oldest waiting customer whose window contains the start, whose service fits
-    /// inside the freed time, and whose service the freed technician can do (the freed bay is free for the same reason).
-    /// This is a courtesy step after the real change succeeded, so it never fails the cancel or reschedule.
-    /// </summary>
-    private async Task OfferFreedSlotAsync(Guid shopId, Guid technicianId, DateTime start, DateTime end, CancellationToken ct)
-    {
-        if (start <= clock.UtcNow)
-            return;
-
-        var technician = await db.Technicians.AsNoTracking().FirstOrDefaultAsync(t => t.Id == technicianId, ct);
-        if (technician is null)
-            return;
-
-        var freedMinutes = (end - start).TotalMinutes;
-        var services = await db.ServiceTypes.AsNoTracking().ToDictionaryAsync(s => s.Id, ct);
-
-        var candidates = await db.WaitlistEntries
-            .Where(w => w.ShopId == shopId
-                        && w.Status == WaitlistStatus.Waiting
-                        && w.EarliestStartUtc <= start
-                        && start <= w.LatestStartUtc)
-            .OrderBy(w => w.CreatedUtc)
-            .Take(50)
-            .ToListAsync(ct);
-
-        var match = candidates.FirstOrDefault(w =>
-            services.TryGetValue(w.ServiceTypeId, out var service)
-            && service.DurationMinutes <= freedMinutes
-            && technician.HasSkill(service.RequiredSkill));
-        if (match is null)
-            return;
-
-        try
-        {
-            match.Offer(start);
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            // Another request touched the same entry first. It is fine: the cancel already succeeded.
-        }
-    }
+    // A slot just opened up: let the waitlist have first refusal. Never fails the cancel or reschedule that caused it.
+    private Task OfferFreedSlotAsync(Guid shopId, Guid technicianId, DateTime start, DateTime end, CancellationToken ct) =>
+        WaitlistOffers.OfferAsync(db, clock.UtcNow, shopId, technicianId, start, end, ct);
 
     public Task<AppointmentResponse> MarkNoShowAsync(Guid id, CancellationToken ct = default) =>
         ChangeAsync(id, a => a.MarkNoShow(), ct);

@@ -19,6 +19,7 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
 
         builder.Property(a => a.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(a => a.CancellationReason).HasMaxLength(500);
+        builder.Property(a => a.ReminderSentUtc).HasConversion(new UtcDateTimeConverter());
 
         // SQL Server bumps this value on every update; EF uses it to detect two people editing
         // the same appointment (optimistic concurrency, used properly from Day 7).
@@ -45,6 +46,9 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.HasIndex(a => new { a.TechnicianId, a.StartTimeUtc });
         builder.HasIndex(a => new { a.BayId, a.StartTimeUtc });
         builder.HasIndex(a => new { a.ShopId, a.StartTimeUtc });
+
+        // The background jobs ask "which Booked appointments start before/after X?" every minute.
+        builder.HasIndex(a => new { a.Status, a.StartTimeUtc });
 
         // Last line of defence against double booking. The booking code already checks for clashes under a lock, but if a
         // bug or a second code path ever slips through, the DATABASE refuses two active appointments for the same technician

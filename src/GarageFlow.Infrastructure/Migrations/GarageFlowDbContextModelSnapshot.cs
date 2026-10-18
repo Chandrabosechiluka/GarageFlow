@@ -76,6 +76,9 @@ namespace GarageFlow.Infrastructure.Migrations
                     b.Property<DateTime>("EndTimeUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("ReminderSentUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -116,6 +119,8 @@ namespace GarageFlow.Infrastructure.Migrations
                         .HasFilter("[Status] <> 'Cancelled' AND [Status] <> 'NoShow'");
 
                     b.HasIndex("ShopId", "StartTimeUtc");
+
+                    b.HasIndex("Status", "StartTimeUtc");
 
                     b.HasIndex("TechnicianId", "StartTimeUtc")
                         .IsUnique()
@@ -371,8 +376,20 @@ namespace GarageFlow.Infrastructure.Migrations
                     b.Property<DateTime>("LatestStartUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("OfferExpiresUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("OfferNotifiedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("OfferedEndUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("OfferedStartUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("OfferedTechnicianId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -401,6 +418,8 @@ namespace GarageFlow.Infrastructure.Migrations
                     b.HasIndex("CustomerId");
 
                     b.HasIndex("ServiceTypeId");
+
+                    b.HasIndex("Status", "OfferExpiresUtc");
 
                     b.HasIndex("VehicleId", "ServiceTypeId");
 
