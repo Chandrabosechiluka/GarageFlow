@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.Json.Serialization;
 using GarageFlow.Api.BackgroundJobs;
 using GarageFlow.Api.Errors;
+using GarageFlow.Api.Middleware;
+using GarageFlow.Api.Security;
 using GarageFlow.Application;
 using GarageFlow.Application.Abstractions;
 using GarageFlow.Application.Services;
@@ -10,11 +12,20 @@ using GarageFlow.Infrastructure.Auth;
 using GarageFlow.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// One line per log entry, with the request's correlation ID (a logging "scope") printed in front.
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.SingleLine = true;
+    options.IncludeScopes = true;
+    options.TimestampFormat = "HH:mm:ss ";
+});
 
 var connectionString = builder.Configuration.GetConnectionString("GarageFlow")
     ?? throw new InvalidOperationException("Connection string 'GarageFlow' is not configured.");
@@ -35,6 +46,10 @@ var maintenance = builder.Configuration.GetSection("Maintenance").Get<Maintenanc
 builder.Services.AddSingleton(maintenance);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(connectionString);
+
+// Who is calling: lets the DbContext write the user's e-mail into the audit trail.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -73,7 +88,23 @@ builder.Services
 if (maintenance.Enabled)
     builder.Services.AddHostedService<MaintenanceWorker>();
 
-builder.Services.AddProblemDetails();
+builder.Services.AddProblemDetails(options =>
+    // Also covers the empty 401/403/404 responses that UseStatusCodePages turns into JSON.
+    options.CustomizeProblemDetails = context =>
+        context.ProblemDetails.Extensions["correlationId"] = CorrelationIdMiddleware.Get(context.HttpContext));
+
+// Invalid input (a missing field, a too-long name) already becomes a 400 automatically; this adds the correlation ID.
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var problem = new ValidationProblemDetails(context.ModelState)
+        {
+            Status = StatusCodes.Status400BadRequest,
+            Title = "One or more validation errors occurred."
+        };
+        problem.Extensions["correlationId"] = CorrelationIdMiddleware.Get(context.HttpContext);
+        return new BadRequestObjectResult(problem) { ContentTypes = { "application/problem+json" } };
+    });
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
 builder.Services.AddEndpointsApiExplorer();
@@ -100,7 +131,12 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
+// Order matters. Correlation ID first so everything after it is tagged; request logging next so it sees the FINAL
+// status; then the exception handler, which turns any exception into a problem-details response.
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseExceptionHandler();
+app.UseStatusCodePages(); // empty 401 / 403 / 404 responses become problem-details JSON too
 
 if (app.Environment.IsDevelopment())
 {

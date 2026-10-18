@@ -10,7 +10,7 @@ public interface ICustomerService
 {
     Task<CustomerResponse> CreateAsync(CreateCustomerRequest request, CancellationToken ct = default);
     Task<CustomerResponse> GetAsync(Guid id, CancellationToken ct = default);
-    Task<IReadOnlyList<CustomerResponse>> ListAsync(string? search, CancellationToken ct = default);
+    Task<PagedResult<CustomerResponse>> ListAsync(string? search, PageRequest? page = null, CancellationToken ct = default);
     Task<VehicleResponse> AddVehicleAsync(Guid customerId, AddVehicleRequest request, CancellationToken ct = default);
 }
 
@@ -40,7 +40,7 @@ public class CustomerService(IGarageFlowDbContext db) : ICustomerService
         return customer.ToResponse();
     }
 
-    public async Task<IReadOnlyList<CustomerResponse>> ListAsync(string? search, CancellationToken ct = default)
+    public async Task<PagedResult<CustomerResponse>> ListAsync(string? search, PageRequest? page = null, CancellationToken ct = default)
     {
         IQueryable<Customer> query = db.Customers.AsNoTracking().Include(c => c.Vehicles);
 
@@ -50,9 +50,8 @@ public class CustomerService(IGarageFlowDbContext db) : ICustomerService
             query = query.Where(c => c.FullName.ToLower().Contains(term) || c.Email.Contains(term));
         }
 
-        // Real pagination arrives on Day 9; until then the list is capped.
-        var customers = await query.OrderBy(c => c.FullName).Take(100).ToListAsync(ct);
-        return customers.Select(c => c.ToResponse()).ToList();
+        return await query.OrderBy(c => c.FullName).ThenBy(c => c.Id)
+            .ToPagedAsync(page, c => c.ToResponse(), ct);
     }
 
     public async Task<VehicleResponse> AddVehicleAsync(Guid customerId, AddVehicleRequest request, CancellationToken ct = default)

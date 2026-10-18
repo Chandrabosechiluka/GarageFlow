@@ -2,7 +2,7 @@
 
 A backend API for auto service centers: customers book a service for their vehicle, the system assigns a qualified technician and a free bay, and each appointment moves through check-in and inspection to completion.
 
-> Status: **Day 8**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Day 7 adds a cancellation notice policy, rescheduling under the same lock, and a waitlist that is offered freed slots. Day 8 adds background jobs: no-show marking, reminders, and waitlist offer notices and expiry.
+> Status: **Day 9**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Day 7 adds a cancellation notice policy, rescheduling under the same lock, and a waitlist that is offered freed slots. Day 8 adds background jobs: no-show marking, reminders, and waitlist offer notices and expiry. Day 9 adds pagination, an automatic audit trail, correlation IDs, request logging and consistent error bodies.
 
 ## Tech stack
 
@@ -51,6 +51,14 @@ A hosted worker (`MaintenanceWorker`) runs every minute and calls `MaintenanceSe
 - **Waitlist:** offers are announced once, expire after 2 hours, and an expired offer is passed to the next customer if the slot is still free.
 
 Jobs are idempotent (each records its result on the row) and tolerate races through the row version. Notifications go through `INotificationSender`; today it logs. Settings live under `Maintenance` in `appsettings.json`. See `docs/day-8-study-notes.md`.
+
+## Pagination, audit trail and logging
+
+- Lists are paged (`?page=1&pageSize=20`, max 100) with a stable sort (tie-broken by `Id`) and return `items`, `totalCount`, `totalPages`, `hasNext`.
+- Every change to appointments, inspection items, waitlist entries, customers, vehicles and users is written to `AuditLogs` (who, what, from/to, when) in the same transaction as the change. Password hashes are never recorded. Background jobs show as `system`.
+- Every response carries `X-Correlation-ID`; error bodies include `correlationId`, and every log line for the request carries it. One log line per request. 500 responses never reveal internals.
+
+See `docs/day-9-study-notes.md`.
 
 ## Appointment lifecycle
 
@@ -134,7 +142,8 @@ The integration tests use the API's connection string from user secrets (or the 
 | Book, reschedule, check in, cancel, mark no-show, use the waitlist | yes | yes | no |
 | Override the 2-hour notice rule (`allowLate`) | yes | no | no |
 | Start inspection, add inspection items, complete | yes | no | yes |
-| Manage users | yes | no | no |
+| Manage users, read the full audit trail, run jobs | yes | no | no |
+| See one appointment's history | yes | yes | no |
 
 ## Endpoints
 
@@ -147,7 +156,8 @@ The integration tests use the API's connection string from user secrets (or the 
 | `POST /api/customers`, `GET /api/customers`, `GET /api/customers/{id}` | Create, search and read customers |
 | `POST /api/customers/{id}/vehicles` | Register a vehicle |
 | `POST /api/appointments` | Book (checks skill, ownership, UTC, opening hours, clashes). Leave `technicianId` / `bayId` empty to have them assigned |
-| `GET /api/appointments`, `GET /api/appointments/{id}` | List (filter by `fromUtc`, `toUtc`, `status`) and read |
+| `GET /api/appointments`, `GET /api/appointments/{id}` | List (filter by `fromUtc`, `toUtc`, `status`; paged with `page`, `pageSize`) and read |
+| `GET /api/appointments/{id}/history`, `GET /api/audit` | Who did what and when (history: Admin/Advisor; full audit with filters: Admin) |
 | `POST /api/appointments/{id}/reschedule` | Move a Booked appointment (same rules and lock as booking; keeps technician and bay if free) |
 | `POST /api/waitlist`, `GET /api/waitlist?status=` | Ask to be told when a slot opens; see the queue |
 | `POST /api/waitlist/{id}/accept`, `/cancel` | Turn an offered slot into a booking; leave the queue |
@@ -166,6 +176,6 @@ Errors use the standard problem-details JSON: 400 (invalid input or broken rule)
 6. Double-booking prevention: transactions, lock, unique indexes, optimistic concurrency (done)
 7. Cancellation, rescheduling, waitlist (done)
 8. Background jobs: reminders, no-show marking, offer expiry (done)
-9. Error handling, logging, pagination, audit trail
+9. Error handling, logging, pagination, audit trail (done)
 10. Integration tests, Docker image for the API, GitHub Actions
 11. Deployment to Azure

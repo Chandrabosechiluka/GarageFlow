@@ -13,7 +13,7 @@ public interface IAppointmentService
 {
     Task<AppointmentResponse> BookAsync(BookAppointmentRequest request, CancellationToken ct = default);
     Task<AppointmentResponse> GetAsync(Guid id, CancellationToken ct = default);
-    Task<IReadOnlyList<AppointmentResponse>> ListAsync(DateTime? fromUtc, DateTime? toUtc, AppointmentStatus? status, CancellationToken ct = default);
+    Task<PagedResult<AppointmentResponse>> ListAsync(DateTime? fromUtc, DateTime? toUtc, AppointmentStatus? status, PageRequest? page = null, CancellationToken ct = default);
     Task<AppointmentResponse> CheckInAsync(Guid id, CancellationToken ct = default);
     Task<AppointmentResponse> StartInspectionAsync(Guid id, CancellationToken ct = default);
     Task<AppointmentResponse> AddInspectionItemAsync(Guid id, AddInspectionItemRequest request, CancellationToken ct = default);
@@ -144,8 +144,8 @@ public class AppointmentService(IGarageFlowDbContext db, IClock clock, IBookingG
         return appointment.ToResponse();
     }
 
-    public async Task<IReadOnlyList<AppointmentResponse>> ListAsync(
-        DateTime? fromUtc, DateTime? toUtc, AppointmentStatus? status, CancellationToken ct = default)
+    public async Task<PagedResult<AppointmentResponse>> ListAsync(
+        DateTime? fromUtc, DateTime? toUtc, AppointmentStatus? status, PageRequest? page = null, CancellationToken ct = default)
     {
         IQueryable<Appointment> query = db.Appointments.AsNoTracking().Include(a => a.InspectionItems);
 
@@ -168,9 +168,10 @@ public class AppointmentService(IGarageFlowDbContext db, IClock clock, IBookingG
             query = query.Where(a => a.Status == wanted);
         }
 
-        // Real pagination arrives on Day 9; until then the list is capped.
-        var appointments = await query.OrderBy(a => a.StartTimeUtc).Take(200).ToListAsync(ct);
-        return appointments.Select(a => a.ToResponse()).ToList();
+        // Id is the tie-breaker: two appointments starting at the same moment must always sort the same way,
+        // or one could show up on two pages and another on none.
+        return await query.OrderBy(a => a.StartTimeUtc).ThenBy(a => a.Id)
+            .ToPagedAsync(page, a => a.ToResponse(), ct);
     }
 
     public Task<AppointmentResponse> CheckInAsync(Guid id, CancellationToken ct = default) =>

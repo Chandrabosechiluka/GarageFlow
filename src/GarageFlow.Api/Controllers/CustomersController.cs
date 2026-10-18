@@ -1,4 +1,5 @@
 using GarageFlow.Api.Security;
+using GarageFlow.Application.Common;
 using GarageFlow.Application.Contracts;
 using GarageFlow.Application.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -27,8 +28,9 @@ public class CustomersController(ICustomerService customers) : ControllerBase
         Ok(await customers.GetAsync(id, ct));
 
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<CustomerResponse>>> List([FromQuery] string? search, CancellationToken ct) =>
-        Ok(await customers.ListAsync(search, ct));
+    public async Task<ActionResult<PagedResult<CustomerResponse>>> List(
+        [FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default) =>
+        Ok(await customers.ListAsync(search, new PageRequest(page, pageSize), ct));
 
     [HttpPost("{id:guid}/vehicles")]
     [Authorize(Roles = Roles.AdminOrAdvisor)]

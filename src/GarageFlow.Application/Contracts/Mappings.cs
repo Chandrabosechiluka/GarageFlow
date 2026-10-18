@@ -34,4 +34,7 @@ internal static class Mappings
     public static WaitlistEntryResponse ToResponse(this WaitlistEntry w) =>
         new(w.Id, w.ShopId, w.CustomerId, w.VehicleId, w.ServiceTypeId, w.EarliestStartUtc, w.LatestStartUtc,
             w.Status, w.OfferedStartUtc, w.OfferExpiresUtc, w.AppointmentId, w.CreatedUtc);
+
+    public static AuditLogResponse ToResponse(this AuditLog a) =>
+        new(a.Id, a.EntityName, a.EntityId, a.Action, a.PerformedBy, a.TimestampUtc, a.Details);
 }

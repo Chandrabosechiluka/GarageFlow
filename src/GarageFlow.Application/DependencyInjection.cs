@@ -17,6 +17,7 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IWaitlistService, WaitlistService>();
+        services.AddScoped<IAuditService, AuditService>();
 
         // Background jobs. TryAdd = the Api may register its own configured settings first; this is only the fallback.
         services.TryAddSingleton(new MaintenanceSettings());

@@ -1,4 +1,5 @@
 using GarageFlow.Api.Security;
+using GarageFlow.Application.Common;
 using GarageFlow.Application.Contracts;
 using GarageFlow.Application.Services;
 using GarageFlow.Domain.Enums;
@@ -25,12 +26,20 @@ public class AppointmentsController(IAppointmentService appointments) : Controll
         Ok(await appointments.GetAsync(id, ct));
 
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<AppointmentResponse>>> List(
+    public async Task<ActionResult<PagedResult<AppointmentResponse>>> List(
         [FromQuery] DateTime? fromUtc,
         [FromQuery] DateTime? toUtc,
         [FromQuery] AppointmentStatus? status,
-        CancellationToken ct) =>
-        Ok(await appointments.ListAsync(fromUtc, toUtc, status, ct));
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default) =>
+        Ok(await appointments.ListAsync(fromUtc, toUtc, status, new PageRequest(page, pageSize), ct));
+
+    /// <summary>Who did what to this appointment, and when (oldest first).</summary>
+    [HttpGet("{id:guid}/history")]
+    [Authorize(Roles = Roles.AdminOrAdvisor)]
+    public async Task<ActionResult<IReadOnlyList<AuditLogResponse>>> History(Guid id, [FromServices] IAuditService audit, CancellationToken ct) =>
+        Ok(await audit.AppointmentHistoryAsync(id, ct));
 
     // Status changes are POSTs to action-style URLs: they are commands, not edits of a field.
 
