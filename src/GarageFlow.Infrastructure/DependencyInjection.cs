@@ -1,4 +1,5 @@
 using GarageFlow.Application.Abstractions;
+using GarageFlow.Infrastructure.Auth;
 using GarageFlow.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +16,10 @@ public static class DependencyInjection
         // Whoever asks for IGarageFlowDbContext gets the SAME per-request GarageFlowDbContext instance.
         services.AddScoped<IGarageFlowDbContext>(sp => sp.GetRequiredService<GarageFlowDbContext>());
         services.AddSingleton<IClock, SystemClock>();
+
+        // Authentication helpers. JwtOptions is bound from configuration by the Api (Configure<JwtOptions>).
+        services.AddSingleton<IPasswordHasher>(new Pbkdf2PasswordHasher());
+        services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
         return services;
     }

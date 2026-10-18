@@ -16,6 +16,7 @@ public class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : IExcepti
     {
         var (status, title) = exception switch
         {
+            AuthenticationFailedException => (StatusCodes.Status401Unauthorized, "Authentication failed"),
             NotFoundException => (StatusCodes.Status404NotFound, "Resource not found"),
             ConflictException => (StatusCodes.Status409Conflict, "Conflict"),
             DomainException => (StatusCodes.Status400BadRequest, "Business rule violated"),

@@ -1,3 +1,4 @@
+using GarageFlow.Application.Abstractions;
 using GarageFlow.Domain.Entities;
 using GarageFlow.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -39,6 +40,25 @@ public static class DbSeeder
         var customer = new Customer("Demo Customer", "demo@example.com", "9000000000");
         db.Vehicles.Add(customer.AddVehicle("Maruti", "Swift", 2020, "TS09AB1234"));
         db.Customers.Add(customer);
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// DEVELOPMENT ONLY demo logins, one per role. The shared password is public in this repo, so these accounts
+    /// must never exist in a real environment (the API only calls this in Development).
+    /// </summary>
+    public const string DevPassword = "Garage@12345";
+
+    public static async Task SeedUsersAsync(GarageFlowDbContext db, IPasswordHasher hasher, CancellationToken ct = default)
+    {
+        if (await db.Users.AnyAsync(ct))
+            return;
+
+        db.Users.AddRange(
+            new AppUser("admin@garageflow.local", "Demo Admin", hasher.Hash(DevPassword), UserRole.Admin),
+            new AppUser("advisor@garageflow.local", "Demo Advisor", hasher.Hash(DevPassword), UserRole.Advisor),
+            new AppUser("tech@garageflow.local", "Demo Technician", hasher.Hash(DevPassword), UserRole.Technician));
 
         await db.SaveChangesAsync(ct);
     }

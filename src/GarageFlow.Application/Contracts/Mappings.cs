@@ -5,6 +5,9 @@ namespace GarageFlow.Application.Contracts;
 /// <summary>Entity to DTO conversions, written by hand so every field is visible and easy to follow.</summary>
 internal static class Mappings
 {
+    public static UserResponse ToResponse(this AppUser u) =>
+        new(u.Id, u.Email, u.DisplayName, u.Role, u.IsActive);
+
     public static VehicleResponse ToResponse(this Vehicle v) =>
         new(v.Id, v.CustomerId, v.Make, v.Model, v.Year, v.RegistrationNumber);
 

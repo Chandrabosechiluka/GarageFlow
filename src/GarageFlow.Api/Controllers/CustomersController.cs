@@ -1,10 +1,13 @@
+using GarageFlow.Api.Security;
 using GarageFlow.Application.Contracts;
 using GarageFlow.Application.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GarageFlow.Api.Controllers;
 
 [ApiController]
+[Authorize] // reading: any signed-in user; writing: see the attributes below
 [Route("api/customers")]
 public class CustomersController(ICustomerService customers) : ControllerBase
 {
@@ -12,6 +15,7 @@ public class CustomersController(ICustomerService customers) : ControllerBase
     // action names, which would break CreatedAtAction(nameof(...)).
 
     [HttpPost]
+    [Authorize(Roles = Roles.AdminOrAdvisor)]
     public async Task<ActionResult<CustomerResponse>> Create(CreateCustomerRequest request, CancellationToken ct)
     {
         var created = await customers.CreateAsync(request, ct);
@@ -27,6 +31,7 @@ public class CustomersController(ICustomerService customers) : ControllerBase
         Ok(await customers.ListAsync(search, ct));
 
     [HttpPost("{id:guid}/vehicles")]
+    [Authorize(Roles = Roles.AdminOrAdvisor)]
     public async Task<ActionResult<VehicleResponse>> AddVehicle(Guid id, AddVehicleRequest request, CancellationToken ct)
     {
         var vehicle = await customers.AddVehicleAsync(id, request, ct);
