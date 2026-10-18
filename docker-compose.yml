@@ -34,6 +34,12 @@ services:
       ConnectionStrings__GarageFlow: "Server=sqlserver,1433;Database=GarageFlow;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
       Jwt__SigningKey: ${JWT_SIGNING_KEY:-}
       Database__MigrateOnStartup: "true"
+      # First start of a Production database only (ignored in Development, which has demo data). See docs/day-11-study-notes.md.
+      # Remove BOOTSTRAP_ADMIN_PASSWORD from .env once the first Admin exists.
+      Bootstrap__AdminEmail: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      Bootstrap__AdminPassword: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      Bootstrap__ShopName: ${BOOTSTRAP_SHOP_NAME:-GarageFlow}
+      Swagger__Enabled: ${SWAGGER_ENABLED:-false}
     ports:
       - "5080:8080"
     # No healthcheck here on purpose: the ASP.NET runtime image contains no curl/wget. Check /health from outside instead.

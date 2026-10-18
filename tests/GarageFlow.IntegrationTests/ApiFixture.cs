@@ -15,6 +15,7 @@ namespace GarageFlow.IntegrationTests;
 /// </summary>
 public sealed class ApiFixture : IAsyncLifetime
 {
+    public const string AllowedOrigin = "https://app.garageflow.test";
     private const string TestSigningKey = "integration-tests-signing-key-0123456789-abcdefghij";
 
     // JSON as the API sends it: camelCase names, enums as text.
@@ -46,6 +47,8 @@ public sealed class ApiFixture : IAsyncLifetime
         SetEnvironment("ConnectionStrings__GarageFlow", _connectionString);
         SetEnvironment("Jwt__SigningKey", TestSigningKey);
         SetEnvironment("Maintenance__Enabled", "false"); // no background worker while testing
+        SetEnvironment("RateLimiting__LoginPermitLimit", "1000"); // the many test logins must not trip the limiter (its own tests lower it)
+        SetEnvironment("Cors__AllowedOrigins__0", AllowedOrigin);
 
         Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.UseEnvironment("Development"));
 

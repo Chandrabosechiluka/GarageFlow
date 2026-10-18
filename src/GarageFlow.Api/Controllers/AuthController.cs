@@ -2,6 +2,7 @@ using GarageFlow.Application.Contracts;
 using GarageFlow.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace GarageFlow.Api.Controllers;
 
@@ -12,6 +13,7 @@ public class AuthController(IAuthService auth) : ControllerBase
     /// <summary>Exchange email and password for a JWT. This is the only endpoint (besides health) that needs no token.</summary>
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("login")] // too many tries from one address in a minute = 429
     public async Task<ActionResult<LoginResponse>> Login(LoginRequest request, CancellationToken ct) =>
         Ok(await auth.LoginAsync(request, ct));
 

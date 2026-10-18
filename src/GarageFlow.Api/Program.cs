@@ -1,4 +1,5 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using System.Text.Json.Serialization;
 using GarageFlow.Api.BackgroundJobs;
 using GarageFlow.Api.Errors;
@@ -12,7 +13,9 @@ using GarageFlow.Infrastructure.Auth;
 using GarageFlow.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -107,6 +110,46 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
     });
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
+// ---- Production hardening (all of it is configuration, so the same image runs everywhere) ----
+
+// CORS: which browser front-ends may call this API from another address. Empty (the default) = none, which is the
+// safe choice for an API that nobody has built a web front-end for yet. Cors__AllowedOrigins__0=https://app.example.com
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
+{
+    if (allowedOrigins.Length > 0)
+        policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+}));
+
+// Rate limiting: a login endpoint that can be tried 10 000 times a minute is a password-guessing machine.
+// The numbers are read when the limiter is first used (not at startup), so they can be changed by configuration and tests.
+builder.Services.AddRateLimiter(_ => { });
+builder.Services.AddOptions<RateLimiterOptions>().Configure<IConfiguration>((options, configuration) =>
+{
+    var permitLimit = configuration.GetValue("RateLimiting:LoginPermitLimit", 10);
+    var windowSeconds = configuration.GetValue("RateLimiting:LoginWindowSeconds", 60);
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        // One counter per caller address. Behind a proxy that address comes from X-Forwarded-For (see below).
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = permitLimit,
+            Window = TimeSpan.FromSeconds(windowSeconds),
+            QueueLimit = 0 // over the limit = rejected at once, never queued
+        }));
+});
+
+// Behind a load balancer (Azure Container Apps, App Service, nginx...) every request seems to come from the proxy.
+// With Hosting__BehindProxy=true the real caller address is taken from X-Forwarded-For. Only switch this on when the
+// API is reachable ONLY through such a proxy; otherwise anyone could fake the header and dodge the rate limit.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -133,16 +176,31 @@ var app = builder.Build();
 
 // Order matters. Correlation ID first so everything after it is tagged; request logging next so it sees the FINAL
 // status; then the exception handler, which turns any exception into a problem-details response.
+if (app.Configuration.GetValue<bool>("Hosting:BehindProxy"))
+    app.UseForwardedHeaders(); // first of all, so logging and the rate limiter see the real caller address
+
+app.Use(async (context, next) =>
+{
+    // Stops browsers from "guessing" that a JSON reply is something else (e.g. HTML) and running it.
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    await next();
+});
+
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseExceptionHandler();
 app.UseStatusCodePages(); // empty 401 / 403 / 404 responses become problem-details JSON too
 
-if (app.Environment.IsDevelopment())
+// Swagger lists every endpoint, which is a gift to an attacker: on by default only while developing.
+// A demo environment can switch it on with Swagger__Enabled=true.
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+app.UseCors();
+app.UseRateLimiter();
 
 // Development always creates/upgrades the database. A container or server can ask for the same with
 // Database__MigrateOnStartup=true (no demo data, no demo users: those exist only in Development).
@@ -156,6 +214,14 @@ if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Databas
     {
         await DbSeeder.SeedAsync(db);
         await DbSeeder.SeedUsersAsync(db, scope.ServiceProvider.GetRequiredService<IPasswordHasher>());
+    }
+    else
+    {
+        // A real environment gets no demo data: just a shop and the first Admin, taken from configuration.
+        var bootstrap = app.Configuration.GetSection("Bootstrap").Get<BootstrapOptions>() ?? new BootstrapOptions();
+        await ProductionBootstrapper.RunAsync(
+            db, scope.ServiceProvider.GetRequiredService<IPasswordHasher>(), bootstrap,
+            app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Bootstrap"));
     }
 }
 

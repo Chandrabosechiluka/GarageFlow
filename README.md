@@ -2,7 +2,7 @@
 
 A backend API for auto service centers: customers book a service for their vehicle, the system assigns a qualified technician and a free bay, and each appointment moves through check-in and inspection to completion.
 
-> Status: **Day 10**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Day 7 adds a cancellation notice policy, rescheduling under the same lock, and a waitlist that is offered freed slots. Day 8 adds background jobs: no-show marking, reminders, and waitlist offer notices and expiry. Day 9 adds pagination, an automatic audit trail, correlation IDs, request logging and consistent error bodies. Day 10 adds end-to-end API tests, a Docker image and GitHub Actions CI.
+> Status: **Day 11**: domain model, appointment state machine, SQL Server in Docker, EF Core mappings and migrations, REST endpoints with Swagger, JWT login with roles, slot availability with automatic assignment, and double-booking protection (transaction lock, unique indexes, row version) proven by parallel integration tests. Day 7 adds a cancellation notice policy, rescheduling under the same lock, and a waitlist that is offered freed slots. Day 8 adds background jobs: no-show marking, reminders, and waitlist offer notices and expiry. Day 9 adds pagination, an automatic audit trail, correlation IDs, request logging and consistent error bodies. Day 10 adds end-to-end API tests, a Docker image and GitHub Actions CI. Day 11 makes it deployable: Admin endpoints to set up the shop, a first-run bootstrap for an empty production database, Swagger off by default, CORS allow-list, login rate limiting and proxy support, plus an Azure deployment guide.
 
 ## Tech stack
 
@@ -128,6 +128,21 @@ docker compose --profile api up --build -d
 ```
 `docker compose up -d` (no profile) still starts only SQL Server, for local development. The `Dockerfile` is multi-stage and runs as a non-root user; secrets come in as environment variables, never baked into the image. GitHub Actions (`.github/workflows/ci.yml`) builds, runs every test against a real SQL Server container, and builds the image on each push. See `docs/day-10-study-notes.md`.
 
+## Production setup
+
+A real environment has no demo data or demo users. On its first start (with `Database__MigrateOnStartup=true` and any environment other than Development) the API creates the shop with the standard services and **one Admin** from configuration, then does nothing on later starts:
+
+| Setting (environment variable) | Meaning |
+|---|---|
+| `Bootstrap__AdminEmail`, `Bootstrap__AdminPassword` | First Admin (password 12+ characters; remove it from the environment afterwards) |
+| `Bootstrap__ShopName`, `OpeningTime`, `ClosingTime`, `TimeZoneId` | The shop record |
+| `Swagger__Enabled` | Swagger is off outside Development unless `true` |
+| `Cors__AllowedOrigins__0`, `__1`... | Websites allowed to call the API from a browser (none by default) |
+| `RateLimiting__LoginPermitLimit`, `LoginWindowSeconds` | Login attempts per address per window (default 10 per 60 s, then 429) |
+| `Hosting__BehindProxy` | `true` when a load balancer sits in front, so the real caller address is used |
+
+The Admin then adds technicians and bays with `POST /api/technicians` and `/api/bays`. Step-by-step Azure commands are in `docs/deploy-azure.md`; the reasoning is in `docs/day-11-study-notes.md`.
+
 ## Running the tests
 
 ```powershell
@@ -163,6 +178,7 @@ The integration tests use the API's connection string from user secrets (or the 
 | `POST /api/users`, `GET /api/users`, `POST /api/users/{id}/deactivate` | User management (Admin only) |
 | `GET /api/availability?serviceTypeId=&date=` | Free start times for a service on a day (shop's local date), with who and what is free |
 | `GET /api/service-types`, `/api/technicians`, `/api/bays` | Reference data for booking |
+| `POST /api/technicians`, `/api/bays`, `/api/service-types` | Set the shop up (Admin only) |
 | `POST /api/customers`, `GET /api/customers`, `GET /api/customers/{id}` | Create, search and read customers |
 | `POST /api/customers/{id}/vehicles` | Register a vehicle |
 | `POST /api/appointments` | Book (checks skill, ownership, UTC, opening hours, clashes). Leave `technicianId` / `bayId` empty to have them assigned |
@@ -188,4 +204,4 @@ Errors use the standard problem-details JSON: 400 (invalid input or broken rule)
 8. Background jobs: reminders, no-show marking, offer expiry (done)
 9. Error handling, logging, pagination, audit trail (done)
 10. API integration tests, Docker image for the API, GitHub Actions (done)
-11. Deployment to Azure
+11. Production readiness: bootstrap, hardening, deploy guide (done; live Azure deployment is a guide, not yet run)

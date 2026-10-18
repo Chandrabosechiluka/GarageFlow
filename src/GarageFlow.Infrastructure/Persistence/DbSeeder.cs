@@ -19,12 +19,7 @@ public static class DbSeeder
         var shop = new Shop("GarageFlow Central", new TimeOnly(9, 0), new TimeOnly(18, 0));
         db.Shops.Add(shop);
 
-        db.ServiceTypes.AddRange(
-            new ServiceType("Oil Change", 45, Skill.OilChange),
-            new ServiceType("Brake Inspection", 60, Skill.Brakes),
-            new ServiceType("Tyre Rotation", 30, Skill.Tires),
-            new ServiceType("Engine Diagnostics", 90, Skill.Engine),
-            new ServiceType("General Service", 120, Skill.General));
+        db.ServiceTypes.AddRange(ProductionBootstrapper.StandardServiceTypes());
 
         db.Technicians.AddRange(
             new Technician(shop.Id, "Ravi Kumar", new[] { Skill.General, Skill.OilChange, Skill.Tires }),
