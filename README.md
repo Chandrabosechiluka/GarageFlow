@@ -119,6 +119,24 @@ dotnet run --project src/GarageFlow.Api
 
 Swagger opens at `http://localhost:5080/swagger`. Health checks: `/health` and `/health/db`.
 
+## Front end (Angular)
+
+A single-page app in `web/`: Angular 19, standalone components, signals, reactive forms, lazy routes. Screens: login with roles, a bay board for the day, appointments and their lifecycle, booking with live availability, customers and cars, waitlist, audit trail, and admin pages for shop setup, users and maintenance. Times are shown in the shop's time zone, not the browser's.
+
+```powershell
+# API running on http://localhost:5080 (Development), then:
+cd web
+npm install
+npm start            # http://localhost:4200, /api is proxied to the API
+npm run test:ci      # unit tests (needs Chrome)
+npm run build
+
+# or everything in containers, one origin, no CORS:
+docker compose --profile api --profile web up --build -d    # http://localhost:8081
+```
+
+Details and design decisions: [docs/frontend-notes.md](docs/frontend-notes.md).
+
 ## Docker and CI
 
 ```powershell

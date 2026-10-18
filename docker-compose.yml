@@ -44,5 +44,16 @@ services:
       - "5080:8080"
     # No healthcheck here on purpose: the ASP.NET runtime image contains no curl/wget. Check /health from outside instead.
 
+  # The Angular front end behind nginx, proxying /api to the api service. Needs the api profile too:
+  #   docker compose --profile api --profile web up --build -d     then open http://localhost:8081
+  web:
+    profiles: ["web"]
+    build: ./web
+    container_name: garageflow-web
+    depends_on:
+      - api
+    ports:
+      - "8081:8080"
+
 volumes:
   sqlserver-data:
