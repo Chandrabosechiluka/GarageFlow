@@ -51,6 +51,17 @@ public sealed class RequiresSqlServerFactAttribute : FactAttribute
     }
 }
 
+/// <summary>Like [Theory], but skipped (not failed) when SQL Server is not running.</summary>
+public sealed class RequiresSqlServerTheoryAttribute : TheoryAttribute
+{
+    public RequiresSqlServerTheoryAttribute()
+    {
+        var required = string.Equals(Environment.GetEnvironmentVariable("GARAGEFLOW_REQUIRE_SQL"), "true", StringComparison.OrdinalIgnoreCase);
+        if (!TestDatabase.IsAvailable && !required)
+            Skip = "SQL Server is not reachable. Start it with 'docker compose up -d' (the connection string comes from the API's user secrets, or GARAGEFLOW_TEST_SQL).";
+    }
+}
+
 public record SeedIds(
     Guid ShopId, Guid CustomerId, Guid VehicleId, Guid BrakeServiceId, Guid GeneralServiceId,
     Guid AnilId, Guid Bay1Id, Guid Bay2Id);

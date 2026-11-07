@@ -41,7 +41,7 @@ public class ProductionReadinessTests(ApiFixture api)
 
     // ---------- the Admin sets the shop up ----------
 
-    [Fact]
+    [RequiresSqlServerFact]
     public async Task AnAdmin_CanAddATechnicianABayAndAService_AndEveryoneCanThenListThem()
     {
         var admin = await SignedInAsync("admin@garageflow.local");
@@ -64,7 +64,7 @@ public class ProductionReadinessTests(ApiFixture api)
         Assert.Contains(serviceName, await advisor.GetStringAsync("/api/service-types"));
     }
 
-    [Theory]
+    [RequiresSqlServerTheory]
     [InlineData("advisor@garageflow.local")]
     [InlineData("tech@garageflow.local")]
     public async Task OnlyAnAdmin_CanChangeTheCatalog(string email)
@@ -76,7 +76,7 @@ public class ProductionReadinessTests(ApiFixture api)
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/service-types", new { name = Unique("S"), durationMinutes = 30, requiredSkill = "Tires" })).StatusCode);
     }
 
-    [Fact]
+    [RequiresSqlServerFact]
     public async Task CatalogCreation_RejectsDuplicatesAndBadInput_WithTheRightStatus()
     {
         var admin = await SignedInAsync("admin@garageflow.local");
@@ -91,7 +91,7 @@ public class ProductionReadinessTests(ApiFixture api)
 
     // ---------- Swagger ----------
 
-    [Fact]
+    [RequiresSqlServerFact]
     public async Task Swagger_IsOpenInDevelopment_ClosedInProduction_AndOpenInProductionOnlyIfSwitchedOn()
     {
         Assert.Equal(HttpStatusCode.OK, (await api.Factory!.CreateClient().GetAsync("/swagger/v1/swagger.json")).StatusCode);
@@ -107,14 +107,14 @@ public class ProductionReadinessTests(ApiFixture api)
 
     // ---------- headers and CORS ----------
 
-    [Fact]
+    [RequiresSqlServerFact]
     public async Task EveryResponse_CarriesNoSniff()
     {
         var response = await api.Factory!.CreateClient().GetAsync("/health");
         Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
     }
 
-    [Fact]
+    [RequiresSqlServerFact]
     public async Task Cors_AllowsOnlyTheListedWebsite()
     {
         var client = api.Factory!.CreateClient();
@@ -149,7 +149,7 @@ public class ProductionReadinessTests(ApiFixture api)
         return client.SendAsync(request);
     }
 
-    [Fact]
+    [RequiresSqlServerFact]
     public async Task TooManyLoginAttempts_AreStoppedWith429_ButOtherEndpointsKeepWorking()
     {
         using var limited = With(null, ("RateLimiting:LoginPermitLimit", "3"));
@@ -162,7 +162,7 @@ public class ProductionReadinessTests(ApiFixture api)
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health")).StatusCode);
     }
 
-    [Fact]
+    [RequiresSqlServerFact]
     public async Task BehindAProxy_EachRealCallerAddressGetsItsOwnLoginAllowance()
     {
         using var behindProxy = With(null, ("RateLimiting:LoginPermitLimit", "2"), ("Hosting:BehindProxy", "true"));
@@ -176,7 +176,7 @@ public class ProductionReadinessTests(ApiFixture api)
         Assert.Equal(HttpStatusCode.Unauthorized, (await WrongLoginAsync(client, "203.0.113.99")).StatusCode);
     }
 
-    [Fact]
+    [RequiresSqlServerFact]
     public async Task NotBehindAProxy_ForwardedForHeaderIsIgnored_SoItCannotBeUsedToDodgeTheLimit()
     {
         using var direct = With(null, ("RateLimiting:LoginPermitLimit", "2"));
